@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMA/WMA/KD 回測系統</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="chartTooltip" class="tooltip"></div>
+    <div id="kdTooltip" class="tooltip"></div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>📊 八方來財&MA/KD回測系統</h1>
+            <p>✨ 宗旨利滾利小應好運八方來</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('optimize')">移動平均線模式 (SMA/EMA/WMA)</button>
+            <button class="tab" onclick="switchTab('kd')">KD 指標模式</button>
+            <button class="tab" onclick="switchTab('heatmap')">3D 熱力圖分析</button>
+        </div>
+
+        <div class="content">
+            <!-- 移動平均線模式 -->
+            <div id="optimize" class="tab-content active">
+                <h2>⚙️ 移動平均線參數優化</h2>
+                <div class="info-box">
+                    系統將測試所有可能的均線組合,找出最佳策略參數。支援 SMA (簡單移動平均)、EMA (指數移動平均)、WMA (加權移動平均)。
+                </div>
+
+                <div class="form-group">
+                    <label for="csvFile2">📁 上傳 CSV 檔案</label>
+                    <div class="file-upload" onclick="document.getElementById('csvFile2').click()">
+                        <input type="file" id="csvFile2" accept=".csv" style="display:none" onchange="handleFileUpload(2)" title="上傳 CSV 股票數據檔案">
+                        <p id="fileName2">點擊上傳或拖放 CSV 檔案</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="stockSelect2">選擇股票代碼</label>
+                    <select id="stockSelect2" title="選擇要分析的股票代碼" aria-label="股票代碼">
+                        <option value="">請先上傳 CSV 檔案</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="maType">均線類型</label>
+                    <select id="maType" title="選擇均線計算方法" aria-label="均線類型">
+                        <option value="SMA">SMA (簡單移動平均)</option>
+                        <option value="EMA">EMA (指數移動平均)</option>
+                        <option value="WMA">WMA (加權移動平均)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="useCommission2" style="width: auto;">
+                        <span>使用手續費計算 (0.8%, 最低 $20)</span>
+                    </label>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="minMA">最小均線天數</label>
+                        <input type="number" id="minMA" value="1" min="1" title="輸入最小均線天數">
+                    </div>
+                    <div class="form-group">
+                        <label for="maxMA">最大均線天數</label>
+                        <input type="number" id="maxMA" value="256" min="1" title="輸入最大均線天數">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>開始日期</label>
+                        <input type="text" id="startDate2" value="1/1/2024" placeholder="M/D/YYYY">
+                    </div>
+                    <div class="form-group">
+                        <label>結束日期</label>
+                        <input type="text" id="endDate2" value="12/31/2024" placeholder="M/D/YYYY">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="initialCash2">初始資金 ($)</label>
+                    <input type="number" id="initialCash2" value="10000" min="1" title="輸入初始資金金額">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="displayCount">顯示結果數量</label>
+                        <select id="displayCount" title="選擇要顯示的結果數量" aria-label="顯示結果數量">
+                            <option value="10">前 10 名</option>
+                            <option value="20">前 20 名</option>
+                            <option value="30" selected>前 30 名</option>
+                            <option value="50">前 50 名</option>
+                            <option value="100">前 100 名</option>
+                            <option value="custom">自訂數量</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="customCount">自訂數量(選擇自訂時)</label>
+                        <input type="number" id="customCount" value="30" min="1" disabled title="輸入自訂結果數量">
+                    </div>
+                </div>
+
+                <button class="btn" onclick="runOptimization()">開始優化</button>
+
+                <div style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #ddd;">
+                    <h3>🔍 快速查詢自定義參數</h3>
+                    <div class="info-box">
+                        輸入特定的短期和長期均線天數，快速查看該參數組合的回測結果。
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="quickShortMA">短期均線(天數)</label>
+                            <input type="number" id="quickShortMA" value="5" min="1" title="輸入短期均線天數">
+                        </div>
+                        <div class="form-group">
+                            <label for="quickLongMA">長期均線(天數)</label>
+                            <input type="number" id="quickLongMA" value="20" min="1" title="輸入長期均線天數">
+                        </div>
+                    </div>
+
+                    <button class="btn" onclick="runQuickSearch()" style="background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);">查詢參數</button>
+                    <div class="error" id="errorQuick"></div>
+                </div>
+
+                <div class="error" id="error2"></div>
+                <div class="loading" id="loading2">
+                    <div class="spinner"></div>
+                    <p>正在測試所有參數組合...</p>
+                </div>
+                <div class="results" id="results2"></div>
+            </div>
+
+            <!-- KD 指標模式 -->
+            <div id="kd" class="tab-content">
+                <h2>📉 KD 指標參數優化</h2>
+                <div class="info-box">
+                    KD 指標 (隨機指標) 用於判斷超買超賣。當 K 值向上突破 D 值時買入(金叉)，當 K 值向下跌破 D 值時賣出(死叉)。
+                </div>
+
+                <div class="form-group">
+                    <label for="csvFileKD">📁 上傳 CSV 檔案</label>
+                    <div class="file-upload" onclick="document.getElementById('csvFileKD').click()">
+                        <input type="file" id="csvFileKD" accept=".csv" style="display:none" onchange="handleFileUploadKD()" title="上傳 CSV 股票數據檔案">
+                        <p id="fileNameKD">點擊上傳或拖放 CSV 檔案</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="stockSelectKD">選擇股票代碼</label>
+                    <select id="stockSelectKD" title="選擇要分析的股票代碼" aria-label="股票代碼">
+                        <option value="">請先上傳 CSV 檔案</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="useCommissionKD" style="width: auto;">
+                        <span>使用手續費計算 (0.8%, 最低 $20)</span>
+                    </label>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="minN">最小 N (RSV 週期)</label>
+                        <input type="number" id="minN" value="1" min="1" title="輸入最小 N 值">
+                    </div>
+                    <div class="form-group">
+                        <label for="maxN">最大 N (RSV 週期)</label>
+                        <input type="number" id="maxN" value="256" min="1" title="輸入最大 N 值">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="minM">最小 M (K/D 平滑參數)</label>
+                        <input type="number" id="minM" value="3" min="1" title="輸入最小 M 值">
+                    </div>
+                    <div class="form-group">
+                        <label for="maxM">最大 M (K/D 平滑參數)</label>
+                        <input type="number" id="maxM" value="3" min="1" title="輸入最大 M 值">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>開始日期</label>
+                        <input type="text" id="startDateKD" value="1/1/2024" placeholder="M/D/YYYY">
+                    </div>
+                    <div class="form-group">
+                        <label>結束日期</label>
+                        <input type="text" id="endDateKD" value="12/31/2024" placeholder="M/D/YYYY">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="initialCashKD">初始資金 ($)</label>
+                    <input type="number" id="initialCashKD" value="10000" min="1" title="輸入初始資金金額">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="displayCountKD">顯示結果數量</label>
+                        <select id="displayCountKD" title="選擇要顯示的結果數量" aria-label="顯示結果數量">
+                            <option value="10">前 10 名</option>
+                            <option value="20">前 20 名</option>
+                            <option value="30" selected>前 30 名</option>
+                            <option value="50">前 50 名</option>
+                            <option value="100">前 100 名</option>
+                            <option value="custom">自訂數量</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="customCountKD">自訂數量(選擇自訂時)</label>
+                        <input type="number" id="customCountKD" value="30" min="1" disabled title="輸入自訂結果數量">
+                    </div>
+                </div>
+
+                <button class="btn" onclick="runKDOptimization()">開始 KD 優化</button>
+
+                <div style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #ddd;">
+                    <h3>🔍 快速查詢 KD 參數</h3>
+                    <div class="info-box">
+                        輸入特定的 KD 參數，快速查看該參數組合的回測結果。常用設定：N=9, M1=3, M2=3。
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="quickN">N (RSV 週期)</label>
+                            <input type="number" id="quickN" value="9" min="1" title="輸入 N 值">
+                        </div>
+                        <div class="form-group">
+                            <label for="quickM1">M1 (K 值平滑)</label>
+                            <input type="number" id="quickM1" value="3" min="1" title="輸入 M1 值">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="quickM2">M2 (D 值平滑)</label>
+                        <input type="number" id="quickM2" value="3" min="1" title="輸入 M2 值">
+                    </div>
+
+                    <button class="btn" onclick="runQuickSearchKD()" style="background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);">查詢 KD 參數</button>
+                    <div class="error" id="errorQuickKD"></div>
+                </div>
+
+                <div class="error" id="errorKD"></div>
+                <div class="loading" id="loadingKD">
+                    <div class="spinner"></div>
+                    <p>正在測試所有 KD 參數組合...</p>
+                </div>
+                <div class="results" id="resultsKD"></div>
+            </div>
+
+            <!-- 3D 熱力圖模式 -->
+            <div id="heatmap" class="tab-content">
+                <h2>🔥 3D 熱力圖分析</h2>
+                <div class="info-box">
+                    3D 熱力圖直觀顯示不同參數組合的獲利情況。
+                    <br>• <strong>X 軸</strong>：短期均線天數 | <strong>Y 軸</strong>：長期均線天數 | <strong>Z 軸（高度）</strong>：獲利金額
+                    <br>💰 紅色山峰 = 賺錢區域 | 🟢 綠色低谷 = 賠錢區域
+                </div>
+
+                <div class="form-group">
+                    <label for="heatmapDataSource">選擇數據來源</label>
+                    <select id="heatmapDataSource" title="選擇數據來源" aria-label="數據來源">
+                        <option value="sma">SMA 均線數據</option>
+                        <option value="ema">EMA 均線數據</option>
+                        <option value="wma">WMA 均線數據</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="heatmapViewMode">顯示模式</label>
+                        <select id="heatmapViewMode" title="選擇顯示模式" aria-label="顯示模式">
+                            <option value="surface">曲面圖</option>
+                            <option value="wireframe">網格圖</option>
+                            <option value="both" selected>混合圖</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="heatmapColorScheme">顏色主題</label>
+                        <select id="heatmapColorScheme" title="選擇顏色主題" aria-label="顏色主題">
+                            <option value="profit" selected>賺虧顏色 (紅綠)</option>
+                            <option value="heatmap">熱力圖顏色</option>
+                            <option value="rainbow">彩虹色</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn" onclick="loadHeatmapData()" style="background: linear-gradient(135deg, #ff6b6b 0%, #ff8787 100%);">載入熱力圖</button>
+
+                <div style="margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px;">
+                    <div class="heatmap-container" id="heatmapContainer" style="width: 100%; height: 600px; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                        <div id="heatmapCanvas" style="width: 100%; height: 100%;"></div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                    <h4>📌 操作說明</h4>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li>🖱️ <strong>左鍵拖動</strong>：旋轉視角</li>
+                        <li>🔍 <strong>滾輪</strong>：放大/縮小</li>
+                        <li>➡️ <strong>右鍵拖動</strong>：移動視角</li>
+                        <li>📊 <strong>紅色高峰</strong>：高獲利參數組合區域</li>
+                        <li>💚 <strong>綠色低谷</strong>：賠錢參數組合區域</li>
+                        <li>🏔️ <strong>參數高原</strong>：相近參數組合有相似獲利</li>
+                    </ul>
+                </div>
+
+                <div style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 8px;">
+                    <h4>📈 統計信息</h4>
+                    <div class="form-row">
+                        <div class="stat-box">
+                            <div class="stat-label">最大獲利</div>
+                            <div class="stat-value" id="maxProfitHeatmap">-</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">最小虧損</div>
+                            <div class="stat-value" id="minLossHeatmap">-</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">參數組合數</div>
+                            <div class="stat-value" id="totalCombinations">-</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">獲利組合數</div>
+                            <div class="stat-value" id="profitableCombinations">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="error" id="errorHeatmap"></div>
+                <div class="loading" id="loadingHeatmap">
+                    <div class="spinner"></div>
+                    <p>正在生成 3D 熱力圖...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plotly.js 用於 3D 熱力圖 -->
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+    
+    <!-- 其他腳本 -->
+    <script src="heatmap3d.js"></script>
+    <script src="heatmap_integration.js"></script>
+    <script src="script.js"></script>
+    <script src="kd_script.js"></script>
+</body>
+</html>

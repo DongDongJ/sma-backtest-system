@@ -91,6 +91,7 @@ function calculateCommissionAmount(price, shares, useCommission) {
     if (!useCommission) return 0.0;
     
     const commission = price * shares * 0.0008; //0.08%
+    const minCommission = 0.0;
     return Math.max(commission, minCommission);
 }
 
@@ -199,11 +200,11 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
 
         // 黃金交叉
         if (prevShortMA <= prevLongMA && currShortMA > currLongMA && shares === 0) {
-            shares = Math.floor(cash / currPrice);
+            shares = Math.floor(cash / (currPrice * 1.0008));
             const cost = shares * currPrice;
             cash -= cost;
-            
             buyCommissionRecord = calculateCommissionAmount(currPrice, shares, useCommission);
+            cash -= buyCommissionRecord;
             tradeCount++;
 
             trades.push({
@@ -512,7 +513,7 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
             rank = results.indexOf(r) + 1;
         }
         
-        const detailFunc = 'showDetailedResult(' + r.shortMA + ', ' + r.longMA + ', ' + JSON.stringify(r.shortMAType) + ')';
+        const detailFunc = 'showDetailedResult(' + r.shortMA + ', ' + r.longMA + ', ' + "'" + r.shortMAType + "'" + ')';
         html += '<tr style="cursor: pointer;" onclick="' + detailFunc + '">';
         html += '<td>' + rank + '</td>';
         html += '<td>' + r.shortMA + '</td>';
@@ -598,9 +599,22 @@ function showDetailedResult(shortMADays, longMADays, maType = 'SMA') {
         chartLongMA.push(longIdx >= 0 && longIdx < longMA.length ? longMA[longIdx] : null);
     }
 
+    // 查找該組合在排名中的位置
+    let rankPosition = '未知';
+    if (allOptimizationResults && allOptimizationResults.length > 0) {
+        for (let i = 0; i < allOptimizationResults.length; i++) {
+            const r = allOptimizationResults[i];
+            if (r.shortMA === shortMADays && r.longMA === longMADays && r.shortMAType === maType) {
+                rankPosition = i + 1;
+                break;
+            }
+        }
+    }
+
     let html = `
         <div class="detail-section">
             <h3>📈 策略詳細分析 - ${stockSymbol}</h3>
+            ${rankPosition !== '未知' ? `<div style="background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%); color: #333; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 600; text-align: center; font-size: 1.1em;">🏅 排名: 第 ${rankPosition} 名</div>` : ''}
             <div class="result-stats">
                 <div class="stat-item">
                     <div class="stat-label">短期均線</div>

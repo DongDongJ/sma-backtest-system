@@ -82,8 +82,8 @@ function parseCSVDataKD(csvData, stockSymbol) {
 function calculateCommissionKD(price, shares, useCommission) {
     if (!useCommission) return 0.0;
     
-    const commission = price * shares * 0.003; // 0.3%
-    const minCommission = 20.0;
+    const commission = price * shares * 0.0008; // 0.08%
+    const minCommission = 0.0;
     return Math.max(commission, minCommission);
 }
 
@@ -193,11 +193,12 @@ function backtestKD(dates, closes, N, M1, M2, initialCash, outputStartIdx, useCo
 
         // 金叉：K 從下向上穿過 D，買入
         if (prevK <= prevD && currK > currD && !inPosition && shares === 0) {
-            shares = Math.floor(cash / currPrice);
+            shares = Math.floor(cash / (currPrice * 1.0008));
             const cost = shares * currPrice;
             cash -= cost;
             
             buyCommissionRecord = calculateCommissionKD(currPrice, shares, useCommission);
+            cash -= buyCommissionRecord;
             inPosition = true;
             result.tradeCount++;
 

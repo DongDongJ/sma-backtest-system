@@ -277,6 +277,13 @@
 
                 <div class="form-row">
                     <div class="form-group">
+                        <label for="heatmapDimension">📐 維度選擇</label>
+                        <select id="heatmapDimension" title="選擇2D或3D顯示" aria-label="維度選擇">
+                            <option value="3d" selected>3D 立體圖</option>
+                            <option value="2d">2D 平面圖</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label for="heatmapViewMode">顯示模式</label>
                         <select id="heatmapViewMode" title="選擇顯示模式" aria-label="顯示模式">
                             <option value="surface">曲面圖</option>
@@ -284,6 +291,9 @@
                             <option value="both" selected>混合圖</option>
                         </select>
                     </div>
+                </div>
+
+                <div class="form-row">
                     <div class="form-group">
                         <label for="heatmapColorScheme">顏色主題</label>
                         <select id="heatmapColorScheme" title="選擇顏色主題" aria-label="顏色主題">

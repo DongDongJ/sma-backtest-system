@@ -59,9 +59,17 @@ function loadHeatmapData() {
     // 延遲執行以顯示加載動畫
     setTimeout(() => {
         try {
-            console.log('🎨 正在呼叫 displayHeatmapPlotly...');
-            displayHeatmapPlotly(results, minShort, maxShort, minLong, maxLong, initialCash);
-            console.log('✅ displayHeatmapPlotly 成功');
+            const dimension = document.getElementById('heatmapDimension').value;
+            
+            if (dimension === '2d') {
+                console.log('🎨 正在呼叫 display2DHeatmapPlotly...');
+                display2DHeatmapPlotly(results, minShort, maxShort, minLong, maxLong, initialCash);
+                console.log('✅ display2DHeatmapPlotly 成功');
+            } else {
+                console.log('🎨 正在呼叫 displayHeatmapPlotly...');
+                displayHeatmapPlotly(results, minShort, maxShort, minLong, maxLong, initialCash);
+                console.log('✅ displayHeatmapPlotly 成功');
+            }
             
             updateHeatmapStats(results, initialCash);
             console.log('✅ 統計信息已更新');
@@ -110,6 +118,131 @@ let currentHeatmapData = {
     maxLong: 256,
     initialCash: 10000
 };
+
+/**
+ * 使用 Plotly.js 生成 2D 熱力圖
+ * 優點：清晰的參數對應，易於分析最佳參數區間
+ */
+function display2DHeatmapPlotly(results, minShort, maxShort, minLong, maxLong, initialCash) {
+    console.log('📊 使用 Plotly.js 渲染 2D 熱力圖...');
+    
+    // 保存數據用於後續更新
+    currentHeatmapData = { results, minShort, maxShort, minLong, maxLong, initialCash };
+    
+    // 確保 Plotly 已加載
+    if (typeof Plotly === 'undefined') {
+        console.error('❌ Plotly.js 未加載');
+        const errorDiv = document.getElementById('errorHeatmap');
+        if (errorDiv) errorDiv.textContent = '❌ Plotly.js 加載失敗';
+        return;
+    }
+    
+    try {
+        // 準備數據矩陣
+        const shortCount = maxShort - minShort + 1;
+        const longCount = maxLong - minLong + 1;
+        
+        // 初始化數據矩陣
+        const zData = [];
+        const resultMap = new Map();
+        
+        // 計算獲利
+        let minProfit = Infinity, maxProfit = -Infinity;
+        results.forEach(r => {
+            const profit = r.finalValue - initialCash;
+            minProfit = Math.min(minProfit, profit);
+            maxProfit = Math.max(maxProfit, profit);
+            resultMap.set(`${r.shortMA}_${r.longMA}`, profit);
+        });
+        
+        // 構建 Z 軸數據矩陣
+        for (let i = 0; i < longCount; i++) {
+            const row = [];
+            for (let j = 0; j < shortCount; j++) {
+                const shortMA = minShort + j;
+                const longMA = minLong + i;
+                const key = `${shortMA}_${longMA}`;
+                const profit = resultMap.has(key) ? resultMap.get(key) : 0;
+                row.push(profit);
+            }
+            zData.push(row);
+        }
+        
+        // 構建軸標籤
+        const xLabels = [];
+        for (let i = minShort; i <= maxShort; i++) xLabels.push(i);
+        
+        const yLabels = [];
+        for (let i = minLong; i <= maxLong; i++) yLabels.push(i);
+        
+        // 獲取顏色方案
+        const colorScheme = document.getElementById('heatmapColorScheme')?.value || 'profit';
+        let colorscale = 'RdYlGn'; // 預設紅黃綠
+        
+        if (colorScheme === 'heatmap') {
+            colorscale = 'Hot'; // 熱力圖色
+        } else if (colorScheme === 'rainbow') {
+            colorscale = 'Rainbow'; // 彩虹色
+        }
+        
+        // 創建 2D 熱力圖
+        const trace = {
+            z: zData,
+            x: xLabels,
+            y: yLabels,
+            type: 'heatmap',
+            colorscale: colorscale,
+            showscale: true,
+            colorbar: {
+                title: '獲利 ($)',
+                thickness: 15,
+                len: 0.7
+            },
+            hovertemplate: '<b>短期MA: %{x} 天</b><br>長期MA: %{y} 天<br>獲利: $%{z:.2f}<extra></extra>'
+        };
+        
+        const layout = {
+            title: '2D 交易策略熱力圖 - 參數優化結果',
+            xaxis: {
+                title: '短期 MA (天)',
+                side: 'bottom'
+            },
+            yaxis: {
+                title: '長期 MA (天)'
+            },
+            autosize: true,
+            margin: { l: 80, r: 80, b: 80, t: 90 },
+            paper_bgcolor: 'rgba(245,245,245,1)',
+            plot_bgcolor: 'rgba(255,255,255,1)',
+            font: { family: 'Arial, sans-serif', color: '#333' }
+        };
+        
+        const config = {
+            responsive: true,
+            displayModeBar: true,
+            displaylogo: false,
+            modeBarButtonsToRemove: ['lasso2d', 'select2d']
+        };
+        
+        const container = document.getElementById('heatmapCanvas');
+        if (!container) {
+            console.error('❌ heatmapCanvas 容器不存在');
+            return;
+        }
+        
+        console.log('🎨 正在繪製 2D Plotly 圖表...');
+        Plotly.newPlot(container, [trace], layout, config);
+        console.log('✅ 2D Plotly 圖表已繪製');
+        
+    } catch (error) {
+        console.error('❌ 繪製 2D Plotly 圖表失敗:', error);
+        const errorDiv = document.getElementById('errorHeatmap');
+        if (errorDiv) {
+            errorDiv.textContent = '❌ 繪製圖表失敗：' + error.message;
+            errorDiv.classList.add('show');
+        }
+    }
+}
 
 /**
  * 使用 Plotly.js 生成 3D 熱力圖
@@ -188,6 +321,15 @@ function displayHeatmapPlotly(results, minShort, maxShort, minLong, maxLong, ini
             type: 'surface',
             colorscale: colorscale,
             showscale: true,
+            showsurface: true,
+            contours: {
+                z: {
+                    show: false,
+                    usecolorscale: true,
+                    highlightcolor: 'limegreen',
+                    project: { z: false }
+                }
+            },
             colorbar: {
                 title: '獲利 ($)',
                 thickness: 15,
@@ -276,26 +418,75 @@ function updateHeatmapMode() {
     
     console.log('🎨 更新熱力圖顯示模式...');
     
+    const dimension = document.getElementById('heatmapDimension')?.value || '3d';
     const mode = document.getElementById('heatmapViewMode')?.value || 'surface';
     const container = document.getElementById('heatmapCanvas');
     
     if (!container || !container.data || container.data.length === 0) return;
     
-    const updates = {
-        type: 'surface'
-    };
-    
-    if (mode === 'wireframe') {
-        updates.surfacecolor = [];
-        updates.showsurface = false;
-    } else if (mode === 'both') {
-        updates.showsurface = true;
-    } else {
-        updates.showsurface = true;
+    // 如果維度改變，重新生成圖表
+    if (dimension === '2d' && container.data[0].type !== 'heatmap') {
+        console.log('📐 切換至 2D 熱力圖');
+        display2DHeatmapPlotly(currentHeatmapData.results, currentHeatmapData.minShort, currentHeatmapData.maxShort, currentHeatmapData.minLong, currentHeatmapData.maxLong, currentHeatmapData.initialCash);
+        return;
+    } else if (dimension === '3d' && container.data[0].type !== 'surface') {
+        console.log('📐 切換至 3D 熱力圖');
+        displayHeatmapPlotly(currentHeatmapData.results, currentHeatmapData.minShort, currentHeatmapData.maxShort, currentHeatmapData.minLong, currentHeatmapData.maxLong, currentHeatmapData.initialCash);
+        return;
     }
     
-    Plotly.restyle(container, updates);
-    console.log('✅ 顯示模式已更新:', mode);
+    // 3D 模式下的顯示模式更新
+    if (dimension === '3d') {
+        let updates = {};
+        
+        if (mode === 'surface') {
+            // 曲面圖：只顯示平滑曲面，不顯示網格和等高線
+            updates = {
+                showsurface: true,
+                contours: {
+                    z: {
+                        show: false,
+                        usecolorscale: true,
+                        highlightcolor: 'limegreen',
+                        project: { z: false }
+                    }
+                }
+            };
+            console.log('✅ 3D 曲面圖模式已激活');
+        } else if (mode === 'wireframe') {
+            // 網格圖：只顯示網格線，隱藏曲面
+            updates = {
+                showsurface: false,
+                contours: {
+                    z: {
+                        show: true,
+                        usecolorscale: true,
+                        highlightcolor: 'limegreen',
+                        project: { z: true },
+                        width: 1
+                    }
+                }
+            };
+            console.log('✅ 3D 網格圖模式已激活');
+        } else if (mode === 'both') {
+            // 混合圖：同時顯示曲面和網格線/等高線
+            updates = {
+                showsurface: true,
+                contours: {
+                    z: {
+                        show: true,
+                        usecolorscale: true,
+                        highlightcolor: 'limegreen',
+                        project: { z: false },
+                        width: 1
+                    }
+                }
+            };
+            console.log('✅ 3D 混合圖模式已激活');
+        }
+        
+        Plotly.restyle(container, updates);
+    }
 }
 
 /**
@@ -304,8 +495,14 @@ function updateHeatmapMode() {
 function addHeatmapEventListeners() {
     console.log('📌 正在添加熱力圖事件監聽...');
     
+    const dimensionSelect = document.getElementById('heatmapDimension');
     const colorSchemeSelect = document.getElementById('heatmapColorScheme');
     const viewModeSelect = document.getElementById('heatmapViewMode');
+    
+    if (dimensionSelect) {
+        dimensionSelect.addEventListener('change', updateHeatmapMode);
+        console.log('✅ 維度選擇器已綁定');
+    }
     
     if (colorSchemeSelect) {
         colorSchemeSelect.addEventListener('change', updateHeatmapColor);

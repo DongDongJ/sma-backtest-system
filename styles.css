@@ -410,3 +410,145 @@ tr:hover {
     font-size: 12px;
     z-index: 100;
 }
+/* ==================== 量價訊號分析樣式 ==================== */
+
+.summary-box {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    margin: 20px 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.summary-item {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.summary-item .label {
+    font-size: 0.9em;
+    opacity: 0.9;
+    margin-bottom: 5px;
+}
+
+.summary-item .value {
+    font-size: 1.8em;
+    font-weight: bold;
+}
+
+.signals-table-wrapper {
+    overflow-x: auto;
+    margin: 20px 0;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.signals-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+}
+
+.signals-table thead {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    font-weight: bold;
+}
+
+.signals-table thead th {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 2px solid #ddd;
+}
+
+.signals-table tbody tr {
+    border-bottom: 1px solid #eee;
+}
+
+.signal-row-golden {
+    background: rgba(144, 238, 144, 0.1);
+}
+
+.signal-row-golden:hover {
+    background: rgba(144, 238, 144, 0.2);
+}
+
+.signal-row-death {
+    background: rgba(255, 107, 107, 0.1);
+}
+
+.signal-row-death:hover {
+    background: rgba(255, 107, 107, 0.2);
+}
+
+.signals-table td {
+    padding: 12px;
+    text-align: left;
+}
+
+.detail-row {
+    display: none;
+}
+
+.detail-row.show {
+    display: table-row;
+}
+
+.signals-table tbody tr:nth-child(2n) {
+    background: #f9f9f9;
+}
+
+.signal-detail-content {
+    padding: 15px;
+    background: #f5f5f5;
+    border-radius: 5px;
+    line-height: 1.6;
+    font-size: 0.95em;
+}
+
+.signal-detail-content hr {
+    margin: 10px 0;
+    border: none;
+    border-top: 1px solid #ddd;
+}
+
+.ratio {
+    font-size: 0.85em;
+    color: #666;
+    display: block;
+}
+
+.confidence-high {
+    background: #4caf50;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+.confidence-medium {
+    background: #ff9800;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+.confidence-low {
+    background: #f44336;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+}

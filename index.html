@@ -90,6 +90,23 @@
 
                 <div class="form-row">
                     <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="showVolume" style="width: auto;" checked>
+                            <span>顯示成交量折線圖</span>
+                        </label>
+                    </div>
+                    <div class="form-group" id="volumePeriodGroup" style="display: block;">
+                        <label for="volumePeriodChart">成交量折線周期</label>
+                        <select id="volumePeriodChart" title="選擇成交量折線的時間周期">
+                            <option value="daily" selected>日線</option>
+                            <option value="weekly">週線</option>
+                            <option value="monthly">月線</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
                         <label for="displayCount">顯示結果數量</label>
                         <select id="displayCount" title="選擇要顯示的結果數量" aria-label="顯示結果數量">
                             <option value="10">前 10 名</option>
@@ -319,7 +336,7 @@
                         <li>🔍 <strong>滾輪</strong>：放大/縮小</li>
                         <li>➡️ <strong>右鍵拖動</strong>：移動視角</li>
                         <li>📊 <strong>紅色高峰</strong>：高獲利參數組合區域</li>
-                        <li>💚 <strong>綠色低谷</strong>：賠錢參數組合區域</li>
+                        <li>💙 <strong>深藍色低谷</strong>：賠錢參數組合區域</li>
                         <li>🏔️ <strong>參數高原</strong>：相近參數組合有相似獲利</li>
                     </ul>
                 </div>
@@ -359,6 +376,7 @@
     <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
     
     <!-- 其他腳本 -->
+    <script src="volume_signal_system.js"></script>
     <script src="heatmap3d.js"></script>
     <script src="heatmap_integration.js"></script>
     <script src="script.js"></script>

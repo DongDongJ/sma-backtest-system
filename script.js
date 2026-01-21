@@ -2,7 +2,7 @@ let csvData2 = null;
 let allOptimizationResults = [];
 let currentView = 'top';
 let chartState = {
-    visible: { price: true, shortMA: true, longMA: true, trades: true },
+    visible: { price: true, shortMA: true, longMA: true, trades: true, volume: true },
     chartData: null,
     canvas: null,
     ctx: null,
@@ -11,16 +11,32 @@ let chartState = {
     chartHeight: 0,
     minPrice: 0,
     maxPrice: 0,
-    priceRange: 0
+    priceRange: 0,
+    minVolume: 0,
+    maxVolume: 0,
+    volumeRange: 0,
+    volumeColors: [],  // 存儲每根成交量柱的顏色
+    zoomLevel: 1,  // 縮放等級 (1 = 正常)
+    panX: 0  // 水平平移
 };
 
 document.addEventListener('DOMContentLoaded', function() {
     const displayCountSelect = document.getElementById('displayCount');
     const customCountInput = document.getElementById('customCount');
+    const showVolumeCheckbox = document.getElementById('showVolume');
     
     if (displayCountSelect) {
         displayCountSelect.addEventListener('change', function() {
             customCountInput.disabled = (this.value !== 'custom');
+        });
+    }
+    
+    if (showVolumeCheckbox) {
+        showVolumeCheckbox.addEventListener('change', function() {
+            const volumePeriodGroup = document.getElementById('volumePeriodGroup');
+            if (volumePeriodGroup) {
+                volumePeriodGroup.style.display = this.checked ? 'block' : 'none';
+            }
         });
     }
 });
@@ -48,28 +64,76 @@ function handleFileUpload(mode) {
         const headers = lines[0].split(',').map(h => h.trim());
         
         const stockSelect = document.getElementById(`stockSelect${mode}`);
-        stockSelect.innerHTML = '<option value="">選擇股票代碼</option>';
+        stockSelect.innerHTML = '<option value="">選擇股票數據</option>';
         
-        headers.slice(1).forEach(header => {
-            if (header) {
-                const option = document.createElement('option');
-                option.value = header;
-                option.textContent = header;
-                stockSelect.appendChild(option);
-            }
-        });
+        // 檢查是否是新格式 (包含 Date, Close, Volume 等欄位)
+        const hasNewFormat = headers.includes('Date') && headers.includes('Close') && headers.includes('Volume');
+        
+        if (hasNewFormat) {
+            // 新格式：提取檔案名中的股票代碼
+            const fileName = file.name.replace('.csv', '').split('_')[0];
+            const option = document.createElement('option');
+            option.value = fileName;
+            option.textContent = `${fileName} (K線數據: ${lines.length - 1} 根)`;
+            stockSelect.appendChild(option);
+            stockSelect.value = fileName;
+        } else {
+            // 舊格式：直接使用欄位名稱
+            headers.slice(1).forEach(header => {
+                if (header) {
+                    const option = document.createElement('option');
+                    option.value = header;
+                    option.textContent = header;
+                    stockSelect.appendChild(option);
+                }
+            });
+        }
 
-        csvData2 = { headers, lines };
+        csvData2 = { headers, lines, format: hasNewFormat ? 'new' : 'old' };
     };
     reader.readAsText(file);
 }
 
 function parseCSVData(csvData, stockSymbol) {
-    const targetCol = csvData.headers.indexOf(stockSymbol);
-    if (targetCol === -1) return null;
-
     const dates = [];
     const closes = [];
+    const volumes = [];
+    const opens = [];
+    
+    // 新格式處理 (Date, Open, High, Low, Close, Volume)
+    if (csvData.format === 'new') {
+        const closeColIndex = csvData.headers.indexOf('Close');
+        const volumeColIndex = csvData.headers.indexOf('Volume');
+        const openColIndex = csvData.headers.indexOf('Open');
+        
+        if (closeColIndex === -1) return null;
+        
+        for (let i = 1; i < csvData.lines.length; i++) {
+            const line = csvData.lines[i].trim();
+            if (!line) continue;
+            
+            const values = line.split(',').map(v => v.trim());
+            if (values.length > closeColIndex && values[0]) {
+                const date = values[0];
+                const close = parseFloat(values[closeColIndex]);
+                const volume = volumeColIndex !== -1 ? parseInt(values[volumeColIndex]) : 0;
+                const open = openColIndex !== -1 ? parseFloat(values[openColIndex]) : close;
+                
+                if (!isNaN(close) && close > 0) {
+                    dates.push(date);
+                    closes.push(close);
+                    volumes.push(volume);
+                    opens.push(open);
+                }
+            }
+        }
+        
+        return { dates, closes, volumes, opens };
+    }
+    
+    // 舊格式處理
+    const targetCol = csvData.headers.indexOf(stockSymbol);
+    if (targetCol === -1) return null;
 
     for (let i = 1; i < csvData.lines.length; i++) {
         const values = csvData.lines[i].split(',');
@@ -83,7 +147,7 @@ function parseCSVData(csvData, stockSymbol) {
         }
     }
 
-    return { dates, closes };
+    return { dates, closes, volumes: [], opens: [] };
 }
 
 // 計算手續費
@@ -93,6 +157,166 @@ function calculateCommissionAmount(price, shares, useCommission) {
     const commission = price * shares * 0.0008; //0.08%
     const minCommission = 0.0;
     return Math.max(commission, minCommission);
+}
+
+/**
+ * 根據收盤價與昨日開盤/收盤計算成交量的顏色
+ * @param {Array} dates - 日期數組
+ * @param {Array} closes - 收盤價數組
+ * @param {Array} opens - 開盤價數組
+ * @returns {Array} 顏色數組 (紅色: 上漲, 綠色: 下跌, 黃色: 平盤)
+ */
+function calculateVolumeColors(dates, closes, opens) {
+    const colors = [];
+    
+    for (let i = 0; i < closes.length; i++) {
+        if (i === 0) {
+            // 第一根K線無法判斷，默認為灰色
+            colors.push('#999999');
+            continue;
+        }
+        
+        const today = closes[i];
+        const yesterday = closes[i - 1];
+        const open = opens && opens[i] ? opens[i] : yesterday;
+        
+        // 今天收盤 > 昨天開盤 = 紅色 (上漲)
+        // 今天收盤 = 昨天開盤 = 黃色 (平盤)
+        // 今天收盤 < 昨天收盤 = 綠色 (下跌)
+        
+        const tolerance = 0.001; // 浮點數比較容差
+        
+        if (Math.abs(today - open) < tolerance) {
+            colors.push('#FFD700'); // 黃色 - 平盤
+        } else if (today > open) {
+            colors.push('#EF5350'); // 紅色 - 上漲
+        } else {
+            colors.push('#66BB6A'); // 綠色 - 下跌
+        }
+    }
+    
+    return colors;
+}
+
+/**
+ * 偵測價量關係類型 (8種情況)
+ * @param {Array} closes - 收盤價數組
+ * @param {Array} volumes - 成交量數組
+ * @param {Number} index - 當前K線索引
+ * @returns {Object} { type, description, signal }
+ */
+function detectPriceVolumeRelation(closes, volumes, index) {
+    if (index === 0) {
+        return {
+            type: '初始K線',
+            description: '無法判斷',
+            signal: 'neutral',
+            emoji: '📍'
+        };
+    }
+
+    // 計算平均成交量 (最近20根，包含今天)
+    const lookbackPeriod = Math.min(20, index + 1);
+    let avgVolume = 0;
+    for (let i = Math.max(0, index - lookbackPeriod + 1); i <= index; i++) {
+        avgVolume += volumes[i];
+    }
+    avgVolume /= lookbackPeriod;
+
+    const currentPrice = closes[index];
+    const previousPrice = closes[index - 1];
+    const currentVolume = volumes[index];
+    
+    // 判斷價格方向 (容差: 0.5%)
+    const priceChangePct = (currentPrice - previousPrice) / previousPrice;
+    const priceTolerance = 0.005;
+    
+    let priceDirection = 'flat'; // 'up', 'down', 'flat'
+    if (priceChangePct > priceTolerance) priceDirection = 'up';
+    else if (priceChangePct < -priceTolerance) priceDirection = 'down';
+
+    // 判斷成交量方向
+    const volumeRatio = currentVolume / avgVolume;
+    const volumeTolerance = 1.0;
+    
+    let volumeDirection = 'normal'; // 'up', 'down'
+    if (volumeRatio > 1.2) volumeDirection = 'up';
+    else if (volumeRatio < 0.8) volumeDirection = 'down';
+
+    // 判斷是否創高/創低
+    let isNewHigh = true, isNewLow = true;
+    for (let i = Math.max(0, index - 20); i < index; i++) {
+        if (closes[i] >= currentPrice) isNewHigh = false;
+        if (closes[i] <= currentPrice) isNewLow = false;
+    }
+
+    // 8種情況判斷
+    if (priceDirection === 'up' && volumeDirection === 'up') {
+        return {
+            type: '買點信號',
+            description: '價格上升 + 成交量增加 → 買盤湧入，可考慮進場',
+            signal: 'strong_bullish',
+            emoji: '🟢'
+        };
+    }
+    else if (priceDirection === 'down' && volumeDirection === 'up') {
+        return {
+            type: '賣點信號',
+            description: '價格下跌 + 成交量增加 → 拋售洶湧，應及時出場',
+            signal: 'strong_bearish',
+            emoji: '🔴'
+        };
+    }
+    else if ((priceDirection === 'up' || priceDirection === 'flat') && volumeDirection === 'down') {
+        if (isNewHigh) {
+            return {
+                type: '賣點警告',
+                description: '價格創新高 + 成交量萎縮 → 頂部風險高，準備減倉',
+                signal: 'divergence_bearish',
+                emoji: '⚠️'
+            };
+        } else {
+            return {
+                type: '減倉信號',
+                description: '價格上升 + 成交量減弱 → 上漲乏力，應考慮減倉',
+                signal: 'weak_bullish',
+                emoji: '🟡'
+            };
+        }
+    }
+    else if (priceDirection === 'down' && volumeDirection === 'down') {
+        if (isNewLow) {
+            return {
+                type: '買點機會',
+                description: '價格創新低 + 成交量萎縮 → 底部出現機會，可佈局',
+                signal: 'divergence_bullish',
+                emoji: '💚'
+            };
+        } else {
+            return {
+                type: '止跌前兆',
+                description: '下跌力道衰退 + 成交量萎縮 → 拋售力竭，可能反彈',
+                signal: 'weak_bearish',
+                emoji: '🟣'
+            };
+        }
+    }
+    else if (priceDirection === 'flat' && volumeDirection === 'down') {
+        return {
+            type: '觀望信號',
+            description: '價格整理 + 成交量萎縮 → 蓄勢待發，靜待突破',
+            signal: 'neutral',
+            emoji: '⏸️'
+        };
+    }
+    else {
+        return {
+            type: '不詳',
+            description: '無法明確判斷',
+            signal: 'neutral',
+            emoji: '❓'
+        };
+    }
 }
 
 // 計算 SMA
@@ -284,7 +508,7 @@ function showError(mode, message) {
     setTimeout(() => errorDiv.classList.remove('show'), 5000);
 }
 
-function initChart(dates, prices, shortMA, longMA, trades, canvasId = 'mainChart') {
+function initChart(dates, prices, shortMA, longMA, trades, canvasId = 'mainChart', volumes = null, opens = null) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -297,8 +521,17 @@ function initChart(dates, prices, shortMA, longMA, trades, canvasId = 'mainChart
 
     chartState.canvas = canvas;
     chartState.ctx = ctx;
-    chartState.chartData = { dates, prices, shortMA, longMA, trades };
+    chartState.chartData = { dates, prices, shortMA, longMA, trades, volumes: volumes || [], opens: opens || [] };
     chartState.padding = { top: 40, right: 30, bottom: 80, left: 60 };
+    
+    // 計算成交量顏色
+    if (volumes && volumes.length > 0) {
+        chartState.volumeColors = calculateVolumeColors(dates, prices, opens);
+    }
+    
+    // 重置縮放和平移
+    chartState.zoomLevel = 1;
+    chartState.panX = 0;
     
     draw();
 
@@ -306,6 +539,7 @@ function initChart(dates, prices, shortMA, longMA, trades, canvasId = 'mainChart
     canvas.addEventListener('mouseleave', () => {
         document.getElementById('chartTooltip').style.display = 'none';
     });
+    canvas.addEventListener('wheel', handleChartZoom);
 }
 
 function draw() {
@@ -332,10 +566,28 @@ function draw() {
     const getX = (i) => padding.left + (i / (chartData.dates.length - 1)) * chartState.chartWidth;
     const getY = (v) => padding.top + chartState.chartHeight - ((v - minP) / chartState.priceRange) * chartState.chartHeight;
 
+    // 計算成交量的縮放 (佔高度的 30%)
+    const volumeHeightPercent = 0.30;
+    const volumeAreaHeight = chartState.chartHeight * volumeHeightPercent;
+    const priceAreaHeight = chartState.chartHeight * (1 - volumeHeightPercent);
+    
+    // 調整 getY 函數以適應成交量區域
+    const getYPrice = (v) => padding.top + priceAreaHeight - ((v - minP) / chartState.priceRange) * priceAreaHeight;
+    
+    // 計算成交量軸範圍
+    if (visible.volume && chartData.volumes && chartData.volumes.length > 0) {
+        const validVolumes = chartData.volumes.filter(v => v > 0);
+        if (validVolumes.length > 0) {
+            chartState.minVolume = Math.min(...validVolumes);
+            chartState.maxVolume = Math.max(...validVolumes) * 1.2;
+            chartState.volumeRange = chartState.maxVolume - chartState.minVolume;
+        }
+    }
+
     ctx.strokeStyle = '#f0f0f0';
     ctx.beginPath();
     for(let i=0; i<=5; i++) {
-        const y = padding.top + (i / 5) * chartState.chartHeight;
+        const y = padding.top + (i / 5) * priceAreaHeight;
         ctx.moveTo(padding.left, y);
         ctx.lineTo(padding.left + chartState.chartWidth, y);
         ctx.fillStyle = '#999';
@@ -343,6 +595,19 @@ function draw() {
         ctx.fillText((maxP - (i/5)*chartState.priceRange).toFixed(1), padding.left - 45, y + 4);
     }
     ctx.stroke();
+
+    // 繪製成交量背景和網格
+    if (visible.volume && chartData.volumes && chartData.volumes.length > 0) {
+        ctx.fillStyle = 'rgba(200, 200, 200, 0.05)';
+        ctx.fillRect(padding.left, padding.top + priceAreaHeight, chartState.chartWidth, volumeAreaHeight);
+        
+        // 成交量網格線
+        ctx.strokeStyle = '#e0e0e0';
+        ctx.beginPath();
+        ctx.moveTo(padding.left, padding.top + priceAreaHeight);
+        ctx.lineTo(padding.left + chartState.chartWidth, padding.top + priceAreaHeight);
+        ctx.stroke();
+    }
 
     ctx.fillStyle = '#666';
     ctx.font = '11px Arial';
@@ -357,21 +622,27 @@ function draw() {
     for(let i=0; i<chartData.dates.length; i+=dateStep) {
         const x = getX(i);
         ctx.save();
-        ctx.translate(x, padding.top + chartState.chartHeight + 15);
+        ctx.translate(x, padding.top + priceAreaHeight + 15);
         ctx.rotate(Math.PI / 4);
         ctx.fillText(chartData.dates[i], 0, 0);
         ctx.restore();
     }
 
-    if (visible.price) drawDataLine(chartData.prices, '#666', 2);
-    if (visible.shortMA) drawDataLine(chartData.shortMA, '#ff9800', 1.5);
-    if (visible.longMA) drawDataLine(chartData.longMA, '#4caf50', 1.5);
+    // 繪製成交量柱狀圖
+    if (visible.volume && chartData.volumes && chartData.volumes.length > 0) {
+        drawVolumeColumns(getX, padding, priceAreaHeight, volumeAreaHeight);
+    }
+
+    // 使用調整後的 Y 座標繪製價格線
+    if (visible.price) drawDataLine(chartData.prices, '#666', 2, getYPrice);
+    if (visible.shortMA) drawDataLine(chartData.shortMA, '#ff9800', 1.5, getYPrice);
+    if (visible.longMA) drawDataLine(chartData.longMA, '#4caf50', 1.5, getYPrice);
 
     chartData.trades.forEach(t => {
         const idx = chartData.dates.indexOf(t.date);
         if (idx !== -1) {
             const x = getX(idx);
-            const y = getY(t.price);
+            const y = getYPrice(t.price);
             ctx.lineWidth = 1;
 
             if (t.action === '買入' && visible.buy) {
@@ -398,10 +669,35 @@ function draw() {
     });
 }
 
-function drawDataLine(data, color, lineWidth) {
+function drawVolumeColumns(getX, padding, priceAreaHeight, volumeAreaHeight) {
+    const { ctx, chartData } = chartState;
+    const volumeBottom = padding.top + priceAreaHeight;
+    
+    // 每根柱的寬度
+    const barWidth = Math.max(1, Math.min(8, chartState.chartWidth / chartData.dates.length * 0.7));
+    
+    for (let i = 0; i < chartData.volumes.length; i++) {
+        const volume = chartData.volumes[i];
+        if (volume <= 0 || !chartState.volumeColors[i]) continue;
+        
+        // 計算柱高度
+        const normalizedVolume = (volume - chartState.minVolume) / (chartState.volumeRange || 1);
+        const barHeight = Math.max(1, normalizedVolume * volumeAreaHeight);
+        
+        const x = getX(i);
+        const y = volumeBottom - barHeight;
+        
+        // 繪製成交量柱
+        ctx.fillStyle = chartState.volumeColors[i];
+        ctx.fillRect(x - barWidth / 2, y, barWidth, barHeight);
+    }
+}
+
+function drawDataLine(data, color, lineWidth, getYFunc = null) {
     const { ctx, chartData } = chartState;
     const getX = (i) => chartState.padding.left + (i / (chartData.dates.length - 1)) * chartState.chartWidth;
-    const getY = (v) => chartState.padding.top + chartState.chartHeight - ((v - chartState.minPrice) / chartState.priceRange) * chartState.chartHeight;
+    const defaultGetY = (v) => chartState.padding.top + chartState.chartHeight - ((v - chartState.minPrice) / chartState.priceRange) * chartState.chartHeight;
+    const getY = getYFunc || defaultGetY;
 
     ctx.beginPath();
     ctx.strokeStyle = color;
@@ -439,6 +735,10 @@ function handleMouseMove(e) {
     let html = `<div class="tooltip-date">${chartData.dates[idx]}</div>`;
     html += `<div class="tooltip-item"><span>價格:</span> <span class="tooltip-value">${chartData.prices[idx].toFixed(2)}</span></div>`;
     
+    if (chartData.volumes && chartData.volumes[idx]) {
+        html += `<div class="tooltip-item" style="color:#9c27b0"><span>成交量:</span> <span class="tooltip-value">${chartData.volumes[idx].toLocaleString()}</span></div>`;
+    }
+    
     if (chartData.shortMA[idx]) {
         html += `<div class="tooltip-item" style="color:#ff9800"><span>短均:</span> <span class="tooltip-value">${chartData.shortMA[idx].toFixed(2)}</span></div>`;
     }
@@ -446,10 +746,39 @@ function handleMouseMove(e) {
         html += `<div class="tooltip-item" style="color:#4caf50"><span>長均:</span> <span class="tooltip-value">${chartData.longMA[idx].toFixed(2)}</span></div>`;
     }
 
+    // 添加價量關係分析
+    if (chartData.volumes && chartData.volumes.length > 0) {
+        const pvRelation = detectPriceVolumeRelation(chartData.prices, chartData.volumes, idx);
+        html += `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.3);">`;
+        html += `<div class="tooltip-item" style="color:#ffc107"><span>${pvRelation.emoji}</span> <strong>${pvRelation.type}</strong></div>`;
+        html += `<div style="font-size: 12px; color: #bbb; margin-top: 4px; line-height: 1.4;">${pvRelation.description}</div>`;
+        html += `</div>`;
+    }
+
     tooltip.innerHTML = html;
     tooltip.style.display = 'block';
     tooltip.style.left = (e.clientX + 15) + 'px';
     tooltip.style.top = (e.clientY + 15) + 'px';
+}
+
+function handleChartZoom(e) {
+    e.preventDefault();
+    
+    const { padding, chartWidth } = chartState;
+    const rect = chartState.canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    
+    // 只在圖表區域內縮放
+    if (mouseX < padding.left || mouseX > padding.left + chartWidth) return;
+    
+    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;  // 向下滾輪縮小，向上放大
+    const newZoom = chartState.zoomLevel * zoomFactor;
+    
+    // 限制縮放範圍 (0.5x 到 5x)
+    if (newZoom < 0.5 || newZoom > 5) return;
+    
+    chartState.zoomLevel = newZoom;
+    draw();
 }
 
 function displayOptimizationResults(results, initialCash, stockSymbol, useCommission) {
@@ -591,6 +920,8 @@ function showDetailedResult(shortMADays, longMADays, maType = 'SMA') {
     const chartPrices = expandedCloses.slice(outputStartIdx);
     const chartShortMA = [];
     const chartLongMA = [];
+    const chartVolumes = data.volumes && data.volumes.length > 0 ? data.volumes.slice(dataStartIdx + outputStartIdx) : [];
+    const chartOpens = data.opens && data.opens.length > 0 ? data.opens.slice(dataStartIdx + outputStartIdx) : [];
 
     for (let i = outputStartIdx; i < expandedDates.length; i++) {
         const shortIdx = i - (shortMADays - 1);
@@ -659,6 +990,11 @@ function showDetailedResult(shortMADays, longMADays, maType = 'SMA') {
                     <div class="legend-item" data-series="longMA" onclick="toggleSeries('longMA')">
                         <span style="color: #7c4dff; font-weight: bold;">──</span> <span>長期均線</span>
                     </div>
+                    ${chartVolumes && chartVolumes.length > 0 ? `
+                    <div class="legend-item" data-series="volume" onclick="toggleSeries('volume')">
+                        <span style="background: linear-gradient(135deg, #EF5350 0%, #66BB6A 100%); display: inline-block; width: 15px; height: 10px; border-radius: 2px;"></span> <span>成交量</span>
+                    </div>
+                    ` : ''}
                     <div class="legend-item" data-series="buy" onclick="toggleSeries('buy')">
                         <span style="color: #4caf50;">▲</span> <span>黃金交叉</span>
                     </div>
@@ -671,6 +1007,8 @@ function showDetailedResult(shortMADays, longMADays, maType = 'SMA') {
                 </div>
                 <canvas id="strategyChart" class="chart-canvas"></canvas>
             </div>
+
+            ${generateVolumeAnalysis(data, result.trades, shortMADays, longMADays) || ''}
 
             ${result.trades.length > 0 ? `
                 <h4 style="margin-top: 30px;">📋 交易明細</h4>
@@ -711,8 +1049,9 @@ function showDetailedResult(shortMADays, longMADays, maType = 'SMA') {
     document.getElementById('results2').innerHTML = html;
 
     setTimeout(() => {
-        chartState.visible = { price: true, shortMA: true, longMA: true, buy: true, sell: true, end: true };
-        initChart(chartDates, chartPrices, chartShortMA, chartLongMA, result.trades, "strategyChart");
+        const showVolume = document.getElementById('showVolume') ? document.getElementById('showVolume').checked : true;
+        chartState.visible = { price: true, shortMA: true, longMA: true, buy: true, sell: true, end: true, volume: showVolume };
+        initChart(chartDates, chartPrices, chartShortMA, chartLongMA, result.trades, "strategyChart", chartVolumes, chartOpens);
     }, 100);
 }
 
@@ -876,4 +1215,358 @@ function switchResultView(view) {
     const initialCash = parseFloat(document.getElementById('initialCash2').value);
     const useCommission = document.getElementById('useCommission2').checked;
     displayOptimizationResults(allOptimizationResults, initialCash, stockSymbol, useCommission);
+}
+
+// ==================== 量價訊號分析功能 ====================
+
+let volumeCSVData = null;
+
+/**
+ * 為詳細回測結果生成成交量分析
+ */
+function generateVolumeAnalysis(data, trades, shortMADays, longMADays) {
+    if (!data || !data.volumes || data.volumes.length === 0) {
+        return ''; // 沒有成交量數據，跳過
+    }
+
+    const shortMA = computeMA(data.closes, shortMADays);
+    const longMA = computeMA(data.closes, longMADays);
+    const avgVolume = computeAverageVolume(data.volumes, shortMADays);
+
+    let html = `
+        <div class="volume-analysis-section" style="background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <h4>📊 成交量強度評估 & 訊號可信度分析</h4>
+            <div class="info-box">
+                <strong>「量先行於價，量能確認趨勢」</strong> - 本分析評估每次交叉訊號時的成交量強度，以判斷訊號的真實性與後續趨勢的持續力。
+            </div>
+    `;
+
+    // 分析每一次交易對應的成交量強度
+    let tradeAnalysis = [];
+    
+    for (let i = 0; i < trades.length; i++) {
+        const trade = trades[i];
+        const dateIdx = data.dates.indexOf(trade.date);
+        
+        if (dateIdx === -1 || dateIdx < shortMADays) continue;
+
+        const currentVolume = data.volumes[dateIdx];
+        const avgVol = avgVolume[dateIdx];
+        
+        if (!currentVolume || !avgVol) continue;
+
+        const volumeInfo = evaluateVolume(currentVolume, avgVol);
+        
+        let signalType = '';
+        let confidence = 0;
+
+        if (trade.action === '買入') {
+            // 黃金交叉
+            if (volumeInfo.strength >= 8) {
+                signalType = '🟢 強勢黃金交叉';
+                confidence = 95;
+            } else if (volumeInfo.strength >= 6) {
+                signalType = '🟢 黃金交叉 ';
+                confidence = 70;
+            } else {
+                signalType = '🟡 弱勢黃金交叉 ';
+                confidence = 35;
+            }
+        } else {
+            // 死亡交叉
+            if (volumeInfo.strength >= 8) {
+                signalType = '🔴 恐慌性死亡交叉 ';
+                confidence = 95;
+            } else if (volumeInfo.strength >= 6) {
+                signalType = '🔴 死亡交叉 ';
+                confidence = 70;
+            } else {
+                signalType = '🟠 緩跌死亡交叉 ';
+                confidence = 35;
+            }
+        }
+
+        tradeAnalysis.push({
+            date: trade.date,
+            action: trade.action,
+            price: trade.price,
+            volume: currentVolume,
+            avgVolume: avgVol,
+            volumeInfo: volumeInfo,
+            signalType: signalType,
+            confidence: confidence,
+            recommendation: getTradeRecommendation(trade.action, volumeInfo.strength)
+        });
+    }
+
+    // 顯示交易對應的成交量分析
+    if (tradeAnalysis.length > 0) {
+        html += `
+            <div class="volume-trades-table">
+                <h5>交易訊號與成交量強度對照</h5>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                        <tr>
+                            <th style="padding: 10px; text-align: left;">日期</th>
+                            <th style="padding: 10px; text-align: left;">交易動作</th>
+                            <th style="padding: 10px; text-align: left;">成交量</th>
+                            <th style="padding: 10px; text-align: left;">量級評估</th>
+                            <th style="padding: 10px; text-align: left;">訊號類型</th>
+                            <th style="padding: 10px; text-align: left;">信心度</th>
+                            <th style="padding: 10px; text-align: left;">建議</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        tradeAnalysis.forEach((ta, idx) => {
+            const confidenceColor = ta.confidence >= 80 ? '#4caf50' : 
+                                  ta.confidence >= 60 ? '#ff9800' : '#f44336';
+            const actionColor = ta.action === '買入' ? '#4caf50' : '#f44336';
+            
+            html += `
+                <tr style="border-bottom: 1px solid #eee; background: ${idx % 2 === 0 ? '#f9f9f9' : 'white'};">
+                    <td style="padding: 10px;"><strong>${ta.date}</strong></td>
+                    <td style="padding: 10px; color: ${actionColor}; font-weight: bold;">${ta.action}</td>
+                    <td style="padding: 10px;">${ta.volume.toLocaleString()}</td>
+                    <td style="padding: 10px;">${ta.volumeInfo.level}<br><span style="font-size: 0.85em; color: #666;">${ta.volumeInfo.ratio}x</span></td>
+                    <td style="padding: 10px;">${ta.signalType}</td>
+                    <td style="padding: 10px;"><span style="background: ${confidenceColor}; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">${ta.confidence}%</span></td>
+                    <td style="padding: 10px;">${ta.recommendation}</td>
+                </tr>
+            `;
+        });
+
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    // 統計摘要
+    const strongTrades = tradeAnalysis.filter(t => t.confidence >= 80).length;
+    const mediumTrades = tradeAnalysis.filter(t => t.confidence >= 60 && t.confidence < 80).length;
+    const weakTrades = tradeAnalysis.filter(t => t.confidence < 60).length;
+
+    html += `
+        <div style="margin-top: 20px; padding: 15px; background: #f0f7ff; border-radius: 8px; border-left: 4px solid #2196F3;">
+            <h5>📈 訊號質量統計</h5>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #4caf50;">${strongTrades}</div>
+                    <div style="font-size: 0.9em; color: #666;">強訊號 (≥80%)</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #ff9800;">${mediumTrades}</div>
+                    <div style="font-size: 0.9em; color: #666;">中等訊號 (60-80%)</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5em; font-weight: bold; color: #f44336;">${weakTrades}</div>
+                    <div style="font-size: 0.9em; color: #666;">弱訊號 (<60%)</div>
+                </div>
+            </div>
+        </div>
+        </div>
+    `;
+
+    return html;
+}
+
+/**
+ * 評估成交量強度
+ */
+function evaluateVolume(currentVolume, avgVolume) {
+    const ratio = currentVolume / avgVolume;
+    let strength, level, comment;
+
+    if (ratio >= 1.5) {
+        strength = 10;
+        level = '🔴 極強)';
+        comment = '成交量明顯放大，市場共識強烈';
+    } else if (ratio >= 1.2) {
+        strength = 8;
+        level = '🟠 強';
+        comment = '成交量較平常增加，買賣意願明確';
+    } else if (ratio >= 1.0) {
+        strength = 6;
+        level = '🟡 中';
+        comment = '成交量正常水平';
+    } else if (ratio >= 0.7) {
+        strength = 3;
+        level = '🔵 弱';
+        comment = '成交量低於平均，買氣不足';
+    } else {
+        strength = 1;
+        level = '⚫ 極弱';
+        comment = '成交量極低，接盤俠稀少';
+    }
+
+    return { strength, level, ratio: ratio.toFixed(2), comment };
+}
+
+/**
+ * 獲取交易建議
+ */
+function getTradeRecommendation(action, volumeStrength) {
+    if (action === '買入') {
+        if (volumeStrength >= 8) return '💰 強烈買入';
+        if (volumeStrength >= 6) return '👍 可買入';
+        return '⚠️ 謹慎買入';
+    } else {
+        if (volumeStrength >= 8) return '⛔ 強烈賣出';
+        if (volumeStrength >= 6) return '👎 可賣出';
+        return '⚠️ 謹慎賣出';
+    }
+}
+
+/**
+ * 計算平均成交量
+ */
+function computeAverageVolume(volumes, period) {
+    return volumes.map((_, index) => {
+        if (index < period - 1) return null;
+        
+        const sum = volumes
+            .slice(index - period + 1, index + 1)
+            .reduce((acc, v) => acc + v, 0);
+        
+        return sum / period;
+    });
+}
+
+function handleVolumeFileUpload() {
+    const fileInput = document.getElementById('csvFileVolume');
+    const file = fileInput.files[0];
+    
+    if (!file) return;
+
+    document.getElementById('fileNameVolume').textContent = `已選擇: ${file.name}`;
+    document.getElementById('volumeError').textContent = '';
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const csvContent = e.target.result;
+            volumeCSVData = csvContent;
+            document.getElementById('volumeError').textContent = '';
+        } catch (error) {
+            document.getElementById('volumeError').textContent = '❌ 檔案解析失敗: ' + error.message;
+        }
+    };
+    reader.readAsText(file);
+}
+
+function analyzeVolumeSignals() {
+    if (!volumeCSVData) {
+        document.getElementById('volumeError').textContent = '❌ 請先上傳 CSV 檔案';
+        return;
+    }
+
+    const shortPeriod = parseInt(document.getElementById('shortMAPeriod').value) || 20;
+    const longPeriod = parseInt(document.getElementById('longMAPeriod').value) || 50;
+    const volumePeriod = parseInt(document.getElementById('volumePeriod').value) || 20;
+
+    if (shortPeriod >= longPeriod) {
+        document.getElementById('volumeError').textContent = '❌ 短期均線周期必須小於長期均線周期';
+        return;
+    }
+
+    document.getElementById('volumeLoading').classList.add('show');
+    document.getElementById('volumeResults').innerHTML = '';
+    document.getElementById('volumeSummary').style.display = 'none';
+
+    setTimeout(() => {
+        try {
+            // 創建訊號系統實例
+            const signalSystem = new VolumeSignalSystem();
+            signalSystem.parseCSV(volumeCSVData);
+            
+            // 進行分析
+            const report = signalSystem.generateReport(shortPeriod, longPeriod);
+            const signals = signalSystem.detectCrossovers(shortPeriod, longPeriod, volumePeriod);
+
+            // 更新統計摘要
+            document.getElementById('totalSignals').textContent = report.summary.totalSignals;
+            document.getElementById('goldenCount').textContent = report.summary.goldenCrosses;
+            document.getElementById('deathCount').textContent = report.summary.deathCrosses;
+            document.getElementById('strongCount').textContent = report.summary.strongSignals;
+            document.getElementById('mediumCount').textContent = report.summary.mediumSignals;
+            document.getElementById('weakCount').textContent = report.summary.weakSignals;
+            document.getElementById('volumeSummary').style.display = 'block';
+
+            // 生成詳細表格
+            if (signals.length === 0) {
+                document.getElementById('volumeResults').innerHTML = '<div class="info-box">未偵測到交叉訊號。請嘗試調整均線周期。</div>';
+            } else {
+                let html = `
+                    <h3>📋 交叉訊號詳細列表 (共 ${signals.length} 個訊號)</h3>
+                    <div class="signals-table-wrapper">
+                        <table class="signals-table">
+                            <thead>
+                                <tr>
+                                    <th>序號</th>
+                                    <th>日期</th>
+                                    <th>訊號類型</th>
+                                    <th>收盤價</th>
+                                    <th>短期MA</th>
+                                    <th>長期MA</th>
+                                    <th>成交量</th>
+                                    <th>量級評估</th>
+                                    <th>信心度</th>
+                                    <th>建議</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                signals.forEach((signal, index) => {
+                    const confidenceClass = signal.confidence >= 80 ? 'high' : 
+                                          signal.confidence >= 60 ? 'medium' : 'low';
+                    const signalClass = signal.crossType === '黃金交叉 (Golden Cross)' ? 'golden' : 'death';
+                    
+                    html += `
+                        <tr class="signal-row-${signalClass}">
+                            <td>${index + 1}</td>
+                            <td><strong>${signal.date}</strong></td>
+                            <td>${signal.type}</td>
+                            <td>${signal.price.toFixed(2)}</td>
+                            <td>${signal.shortMA}</td>
+                            <td>${signal.longMA}</td>
+                            <td>${signal.volume}</td>
+                            <td>${signal.volumeInfo.level}<br><span class="ratio">${signal.volumeInfo.ratio}x</span></td>
+                            <td><span class="confidence-${confidenceClass}"><strong>${signal.confidence}%</strong></span></td>
+                            <td>${signal.recommendation}</td>
+                        </tr>
+                        <tr class="detail-row">
+                            <td colspan="10">
+                                <div class="signal-detail-content">
+                                    <strong>📝 詳細說明：</strong><br>
+                                    ${signal.description}
+                                    <hr>
+                                    <strong>🔍 成交量分析：</strong><br>
+                                    ${signal.volumeInfo.comment}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                document.getElementById('volumeResults').innerHTML = html;
+            }
+
+            document.getElementById('volumeError').textContent = '';
+        } catch (error) {
+            document.getElementById('volumeError').textContent = '❌ 分析失敗: ' + error.message;
+            console.error('Error:', error);
+        } finally {
+            document.getElementById('volumeLoading').classList.remove('show');
+        }
+    }, 100);
 }

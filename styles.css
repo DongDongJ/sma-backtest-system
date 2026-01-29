@@ -552,3 +552,215 @@ tr:hover {
     border-radius: 4px;
     font-weight: bold;
 }
+
+/* ==================== VIX 分析樣式 ==================== */
+
+.vix-analysis-container {
+    padding: 20px 0;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.stat-card .stat-label {
+    font-size: 0.85em;
+    opacity: 0.9;
+    margin-bottom: 5px;
+}
+
+.stat-card .stat-value {
+    font-size: 1.5em;
+    font-weight: 700;
+}
+
+.patterns-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.pattern-card {
+    background: white;
+    border: 2px solid #f0f0f0;
+    border-radius: 10px;
+    padding: 20px;
+    transition: all 0.3s;
+}
+
+.pattern-card:hover {
+    border-color: #667eea;
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+    transform: translateY(-2px);
+}
+
+.pattern-type {
+    font-size: 1.1em;
+    font-weight: 700;
+    color: #667eea;
+    margin-bottom: 8px;
+}
+
+.pattern-description {
+    color: #666;
+    font-size: 0.95em;
+    margin-bottom: 12px;
+    padding: 8px;
+    background: #f5f5f5;
+    border-radius: 6px;
+}
+
+.pattern-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+    font-size: 0.9em;
+}
+
+.pattern-stats span {
+    background: #e3f2fd;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border-left: 3px solid #2196F3;
+}
+
+.pattern-recommendation {
+    padding: 10px;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+    border-radius: 6px;
+    font-weight: 600;
+    color: #333;
+    border-left: 4px solid #667eea;
+}
+
+.recommendations-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 20px;
+}
+
+.recommendation-section {
+    background: white;
+    border: 2px solid #ffc107;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.recommendation-section h5 {
+    color: #f57c00;
+    margin-bottom: 15px;
+    font-size: 1em;
+}
+
+.strategies-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.strategy-item {
+    background: #fff9e6;
+    padding: 12px;
+    border-radius: 6px;
+    border-left: 4px solid #ffc107;
+}
+
+.strategy-params {
+    color: #333;
+    margin-bottom: 6px;
+}
+
+.strategy-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 0.9em;
+    margin-bottom: 6px;
+}
+
+.strategy-details span {
+    background: #fff0b3;
+    padding: 3px 6px;
+    border-radius: 3px;
+}
+
+.strategy-reason {
+    font-size: 0.85em;
+    color: #666;
+    font-style: italic;
+}
+
+.vix-stats-section {
+    background: #f5f5f5;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+.vix-stats-section h4 {
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 15px;
+}
+
+.stat-card .stat-title {
+    font-size: 0.95em;
+    color: #555;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.stat-card .stat-count {
+    font-size: 1.8em;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.stat-card .stat-years {
+    font-size: 0.85em;
+    opacity: 0.9;
+    margin-bottom: 8px;
+    word-break: break-word;
+}
+
+.stat-card .stat-insight {
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    font-size: 0.9em;
+    margin-top: 10px;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+    .patterns-container,
+    .recommendations-container,
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .strategy-details {
+        flex-direction: column;
+    }
+
+    .stat-card .stat-value {
+        font-size: 1.2em;
+    }
+}

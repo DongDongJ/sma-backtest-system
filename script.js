@@ -445,7 +445,7 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
         else if (prevShortMA >= prevLongMA && currShortMA < currLongMA && shares > 0) {
             const sellCommissionRecord = calculateCommissionAmount(currPrice, shares, useCommission);
             const revenue = shares * currPrice;
-            cash += revenue - buyCommissionRecord - sellCommissionRecord;
+            cash += revenue - sellCommissionRecord;  // ✅ 只扣賣出手續費
             
             totalCommission += buyCommissionRecord + sellCommissionRecord;
 
@@ -454,7 +454,7 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
                 action: '賣出',
                 price: currPrice,
                 shares: shares,
-                buyCommission: buyCommissionRecord,
+                buyCommission: 0,
                 sellCommission: sellCommissionRecord,
                 cashAfter: cash
             });
@@ -469,7 +469,7 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
     if (shares > 0) {
         const sellCommissionRecord = calculateCommissionAmount(closes[endIdx], shares, useCommission);
         const revenue = shares * closes[endIdx];
-        finalValue = cash + revenue - buyCommissionRecord - sellCommissionRecord;
+        finalValue = cash + revenue - sellCommissionRecord;  // ✅ 只扣賣出手續費
         totalCommission += buyCommissionRecord + sellCommissionRecord;
         
         trades.push({
@@ -477,7 +477,7 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
             action: '期末賣出',
             price: closes[endIdx],
             shares: shares,
-            buyCommission: buyCommissionRecord,
+            buyCommission: 0,
             sellCommission: sellCommissionRecord,
             cashAfter: finalValue
         });
@@ -1202,6 +1202,29 @@ function runOptimization() {
             }
             return a.longMA - b.longMA;
         });
+
+        // 保存最佳參數到 localStorage （包含年份信息）
+        if (allOptimizationResults.length > 0) {
+          const bestResult = allOptimizationResults[0];
+          const startYear = new Date(startDate).getFullYear();
+          const endYear = new Date(endDate).getFullYear();
+          const yearKey = startYear === endYear ? startYear : `${startYear}-${endYear}`;
+          
+          const bestParamsData = {
+            shortMA: bestResult.shortMA,
+            longMA: bestResult.longMA,
+            returnRate: ((bestResult.finalValue - initialCash) / initialCash * 100).toFixed(2),
+            finalValue: bestResult.finalValue.toFixed(2),
+            dateRange: `${startDate} 至 ${endDate}`,
+            year: yearKey,
+            stockSymbol: stockSymbol,
+            maType: maType,
+            savedTime: new Date().toLocaleString('zh-TW')
+          };
+          
+          localStorage.setItem(`bestMAParams_${yearKey}`, JSON.stringify(bestParamsData));
+          console.log('💾 已保存最佳參數到 localStorage:', bestParamsData);
+        }
 
         displayOptimizationResults(allOptimizationResults, initialCash, stockSymbol, useCommission);
         console.log('✅ 優化完成！已顯示結果');

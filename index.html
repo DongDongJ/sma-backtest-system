@@ -20,6 +20,7 @@
             <button class="tab active" onclick="switchTab('optimize')">移動平均線模式 (SMA/EMA/WMA)</button>
             <button class="tab" onclick="switchTab('kd')">KD 指標模式</button>
             <button class="tab" onclick="switchTab('heatmap')">3D 熱力圖分析</button>
+            <button class="tab" onclick="switchTab('vixAnalysis')">📈 VIX 恐慌指數分析</button>
         </div>
 
         <div class="content">
@@ -369,6 +370,89 @@
                     <p>正在生成 3D 熱力圖...</p>
                 </div>
             </div>
+
+            <!-- VIX 恐慌指數分析模式 -->
+            <div id="vixAnalysis" class="tab-content">
+                <h2>📈 VIX 恐慌指數與 SMA 歷史重演分析</h2>
+                <div class="info-box">
+                    <strong>核心邏輯：</strong>
+                    <ul style="margin-top: 10px; margin-left: 20px;">
+                        <li>📍 <strong>低VIX年份</strong> (平均 &lt;15): 市場自滿 → 單向趨勢 → SMA大賺 (報酬 40-90%)</li>
+                        <li>📍 <strong>高VIX年份</strong> (平均 &gt;18): 恐慌拋售 → 震盪劇烈 → SMA被洗盤 (報酬 20-35%)</li>
+                        <li>📍 <strong>極端年份</strong> (VIX 15↔82): 恐慌結束信號 → 反彈機會 → 極端參數大賺 (報酬 100%+)</li>
+                    </ul>
+                </div>
+
+                <div class="form-group">
+                    <label for="vixFile">📁 上傳 VIX 歷史數據 CSV</label>
+                    <div class="file-upload" onclick="document.getElementById('vixFile').click()">
+                        <p>點擊選擇或拖放 VIX 數據檔案</p>
+                        <small>格式：Date, VIX_Open, VIX_High, VIX_Low, VIX_Close</small>
+                    </div>
+                    <input type="file" id="vixFile" style="display: none;" accept=".csv" onchange="handleVIXFileUpload()">
+                    <div id="vixFileName" style="margin-top: 10px; color: #666; font-weight: 600;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="stockFileVIX">📁 上傳股票價格數據 CSV (同步時期)</label>
+                    <div class="file-upload" onclick="document.getElementById('stockFileVIX').click()">
+                        <p>點擊選擇或拖放股票數據檔案</p>
+                        <small>格式：Date, Open, High, Low, Close, Volume</small>
+                    </div>
+                    <input type="file" id="stockFileVIX" style="display: none;" accept=".csv" onchange="handleStockFileVIXUpload()">
+                    <div id="stockFileVIXName" style="margin-top: 10px; color: #666; font-weight: 600;"></div>
+                </div>
+
+                <div class="form-row" style="background: #e8f4f8; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #0084c9;">
+                    <p style="color: #0084c9; margin: 0; font-size: 14px;">ℹ️ <strong>VIX 模式已自動同步移動平均線模式的設定</strong><br><small>使用的日期、MA參數和初始資金將與移動平均線模式相同，無需手動調整</small></p>
+                </div>
+
+                <div class="form-row" style="display: none;">
+                    <div class="form-group">
+                        <label for="vixMinYear">分析起始年份</label>
+                        <input type="number" id="vixMinYear" value="2014" min="1990" max="2030">
+                    </div>
+                    <div class="form-group">
+                        <label for="vixMaxYear">分析結束年份</label>
+                        <input type="number" id="vixMaxYear" value="2024" min="1990" max="2030">
+                    </div>
+                </div>
+
+                <div class="form-row" style="display: none;">
+                    <div class="form-group">
+                        <label for="shortMARange">短期MA參數範圍</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="number" id="shortMAMin" value="5" min="1" style="flex: 1;" placeholder="最小">
+                            <span>-</span>
+                            <input type="number" id="shortMAMax" value="30" min="1" style="flex: 1;" placeholder="最大">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="longMARange">長期MA參數範圍</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="number" id="longMAMin" value="20" min="1" style="flex: 1;" placeholder="最小">
+                            <span>-</span>
+                            <input type="number" id="longMAMax" value="200" min="1" style="flex: 1;" placeholder="最大">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group" style="display: none;">
+                    <label for="initialCashVIX">初始資金 ($)</label>
+                    <input type="number" id="initialCashVIX" value="10000" min="1">
+                </div>
+
+                <button class="btn" onclick="runVIXAnalysis()" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    🔍 開始 VIX-SMA 歷史分析
+                </button>
+
+                <div class="error" id="errorVIX"></div>
+                <div class="loading" id="loadingVIX">
+                    <div class="spinner"></div>
+                    <p>正在分析 VIX 與 SMA 規律...</p>
+                </div>
+                <div class="results" id="resultsVIX"></div>
+            </div>
         </div>
     </div>
 
@@ -379,6 +463,8 @@
     <script src="volume_signal_system.js"></script>
     <script src="heatmap3d.js"></script>
     <script src="heatmap_integration.js"></script>
+    <script src="vix_sma_analysis.js"></script>
+    <script src="vix_integration.js"></script>
     <script src="script.js"></script>
     <script src="kd_script.js"></script>
 </body>

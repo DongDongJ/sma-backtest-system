@@ -465,8 +465,8 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
             continue;
         }
 
-        // 黃金交叉
-        if (prevShortMA <= prevLongMA && currShortMA > currLongMA && shares === 0) {
+        // 黃金交叉 - 但避免在最後一天買入（避免當天買入當天賣出浪費手續費）
+        if (prevShortMA <= prevLongMA && currShortMA > currLongMA && shares === 0 && i < endIdx) {
             shares = Math.floor(cash / (currPrice * 1.0008));
             const cost = shares * currPrice;
             cash -= cost;
@@ -898,8 +898,10 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
     displayResults.forEach((r, index) => {
         let rank;
         if (currentView === 'bottom') {
-            rank = results.length - displayCount + index + 1;
+            // 最差排名：從總數倒數
+            rank = results.length - index;
         } else {
+            // 最佳排名：從 1 開始
             rank = results.indexOf(r) + 1;
         }
         

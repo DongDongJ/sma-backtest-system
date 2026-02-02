@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SMA/WMA/KD 回測系統</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="yearly_styles.css">
 </head>
 <body>
     <div id="chartTooltip" class="tooltip"></div>
@@ -21,6 +22,7 @@
             <button class="tab" onclick="switchTab('kd')">KD 指標模式</button>
             <button class="tab" onclick="switchTab('heatmap')">3D 熱力圖分析</button>
             <button class="tab" onclick="switchTab('vixAnalysis')">📈 VIX 恐慌指數分析</button>
+            <button class="tab" onclick="switchTab('yearly')">🌿 年份穩定性分析 (尋找溫和參數)</button>
         </div>
 
         <div class="content">
@@ -56,9 +58,9 @@
                 </div>
 
                 <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 10px;">
-                        <input type="checkbox" id="useCommission2" style="width: auto;">
-                        <span>使用手續費計算 (0.8%)</span>
+                    <label style="display: flex; align-items: center;">
+                        <input type="checkbox" id="useCommission2" style="width: auto; margin: 0;">
+                        <span style="margin-left: 2px;">使用手續費計算 (0.08%)</span>
                     </label>
                 </div>
 
@@ -178,9 +180,9 @@
                 </div>
 
                 <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 10px;">
-                        <input type="checkbox" id="useCommissionKD" style="width: auto;">
-                        <span>使用手續費計算 (0.8%)</span>
+                    <label style="display: flex; align-items: center;">
+                        <input type="checkbox" id="useCommissionKD" style="width: auto; margin: 0;">
+                        <span style="margin-left: 2px;">使用手續費計算 (0.08%)</span>
                     </label>
                 </div>
 
@@ -452,6 +454,123 @@
                     <p>正在分析 VIX 與 SMA 規律...</p>
                 </div>
                 <div class="results" id="resultsVIX"></div>
+            </div>
+
+            <!-- 年份穩定性分析模式 (新增) -->
+            <div id="yearly" class="tab-content">
+                <h2>🌿 年份穩定性分析 - 尋找溫和參數</h2>
+                <div class="info-box">
+                    <strong>目的:</strong> 找到在 2014-2024 各年份都表現穩定的「溫和參數」。
+                    某些參數在整個時期表現優異，但在特定年份可能虧損；此工具幫助你找到風險更均衡的參數。
+                </div>
+
+                <div class="form-group">
+                    <label for="csvFileYearly">📁 上傳 CSV 檔案</label>
+                    <div class="file-upload" onclick="document.getElementById('csvFileYearly').click()">
+                        <input type="file" id="csvFileYearly" accept=".csv" style="display:none" onchange="handleFileUpload('Yearly')" title="上傳 CSV 股票數據檔案">
+                        <p id="fileNameYearly">點擊上傳或拖放 CSV 檔案</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="stockSelectYearly">選擇股票代碼</label>
+                    <select id="stockSelectYearly" title="選擇要分析的股票代碼">
+                        <option value="">請先上傳 CSV 檔案</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="maTypeYearly">均線類型</label>
+                    <select id="maTypeYearly">
+                        <option value="SMA" selected>SMA (簡單移動平均)</option>
+                        <option value="EMA">EMA (指數移動平均)</option>
+                        <option value="WMA">WMA (加權移動平均)</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>開始年份</label>
+                        <input type="number" id="startYearYearly" value="2014" min="2000">
+                    </div>
+                    <div class="form-group">
+                        <label>結束年份</label>
+                        <input type="number" id="endYearYearly" value="2024" min="2000">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="initialCashYearly">初始資金 ($)</label>
+                    <input type="number" id="initialCashYearly" value="10000" min="1">
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; width: fit-content;">
+                        <input type="checkbox" id="useCommissionYearly" style="margin: 0;">
+                        <span style="margin-left: 2px; white-space: nowrap;">使用手續費計算 (0.08%)</span>
+                    </label>
+                </div>
+
+                <hr style="margin: 30px 0; border: 1px solid #ddd;">
+
+                <h3>🔧 模式選擇</h3>
+                <div class="form-row">
+                    <button class="btn" onclick="document.getElementById('testMode').style.display='block'; document.getElementById('scanMode').style.display='none';" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        ✅ 測試具體參數
+                    </button>
+                    <button class="btn" onclick="document.getElementById('scanMode').style.display='block'; document.getElementById('testMode').style.display='none';" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                        🔍 掃描溫和參數
+                    </button>
+                </div>
+
+                <!-- 測試具體參數模式 -->
+                <div id="testMode" style="display: block; margin-top: 20px; padding: 20px; background: #f5f5f5; border-radius: 8px;">
+                    <h4>📊 測試具體參數在各年份的表現</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="testShortMA">短期均線(天數)</label>
+                            <input type="number" id="testShortMA" value="5" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="testLongMA">長期均線(天數)</label>
+                            <input type="number" id="testLongMA" value="20" min="1">
+                        </div>
+                    </div>
+                    <button class="btn" onclick="analyzeYearlyStability()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        分析年份穩定性
+                    </button>
+                </div>
+
+                <!-- 掃描溫和參數模式 -->
+                <div id="scanMode" style="display: none; margin-top: 20px; padding: 20px; background: #f5f5f5; border-radius: 8px;">
+                    <h4>🌿 自動掃描溫和參數</h4>
+                    <p style="color: #666; margin-bottom: 15px;">系統會測試多個參數組合，找出在各年份都穩定的「溫和參數」</p>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="minMAScan">最小均線(天數)</label>
+                            <input type="number" id="minMAScan" value="5" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="maxMAScan">最大均線(天數)</label>
+                            <input type="number" id="maxMAScan" value="50" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="stepScan">掃描步長</label>
+                            <input type="number" id="stepScan" value="5" min="1">
+                        </div>
+                    </div>
+                    <button class="btn" onclick="findMildParameters()" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                        🔍 開始掃描溫和參數
+                    </button>
+                </div>
+
+                <div class="error" id="errorYearly"></div>
+                <div class="loading" id="loadingYearly">
+                    <div class="spinner"></div>
+                    <p>正在分析年份穩定性...</p>
+                </div>
+                <div class="results" id="resultsYearly"></div>
             </div>
         </div>
     </div>

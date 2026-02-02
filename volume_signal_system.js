@@ -36,36 +36,70 @@ class VolumeSignalSystem {
 
   /**
    * 計算簡單移動平均線 (SMA)
+   * 優化版本：使用滑動窗口算法 O(n) 複雜度
    * @param {Number} period - 周期數
    * @returns {Array} SMA 值陣列
    */
   calculateSMA(period) {
-    return this.data.map((_, index) => {
-      if (index < period - 1) return null;
-      
-      const sum = this.data
-        .slice(index - period + 1, index + 1)
-        .reduce((acc, d) => acc + d.close, 0);
-      
-      return sum / period;
-    });
+    const result = new Array(this.data.length);
+    
+    // 初始化第一個窗口的和
+    let sum = 0;
+    for (let i = 0; i < period && i < this.data.length; i++) {
+      sum += this.data[i].close;
+    }
+    
+    // 填充結果前期的 null
+    for (let i = 0; i < period - 1; i++) {
+      result[i] = null;
+    }
+    
+    // 設置第一個有效值
+    if (this.data.length >= period) {
+      result[period - 1] = sum / period;
+    }
+    
+    // 滑動窗口計算後續值
+    for (let i = period; i < this.data.length; i++) {
+      sum = sum - this.data[i - period].close + this.data[i].close;
+      result[i] = sum / period;
+    }
+    
+    return result;
   }
 
   /**
    * 計算平均成交量
+   * 優化版本：使用滑動窗口算法 O(n) 複雜度
    * @param {Number} period - 周期數
    * @returns {Array} 平均成交量陣列
    */
   calculateAverageVolume(period) {
-    return this.data.map((_, index) => {
-      if (index < period - 1) return null;
-      
-      const sum = this.data
-        .slice(index - period + 1, index + 1)
-        .reduce((acc, d) => acc + d.volume, 0);
-      
-      return sum / period;
-    });
+    const result = new Array(this.data.length);
+    
+    // 初始化第一個窗口的和
+    let sum = 0;
+    for (let i = 0; i < period && i < this.data.length; i++) {
+      sum += this.data[i].volume;
+    }
+    
+    // 填充結果前期的 null
+    for (let i = 0; i < period - 1; i++) {
+      result[i] = null;
+    }
+    
+    // 設置第一個有效值
+    if (this.data.length >= period) {
+      result[period - 1] = sum / period;
+    }
+    
+    // 滑動窗口計算後續值
+    for (let i = period; i < this.data.length; i++) {
+      sum = sum - this.data[i - period].volume + this.data[i].volume;
+      result[i] = sum / period;
+    }
+    
+    return result;
   }
 
   /**

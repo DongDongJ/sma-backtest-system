@@ -560,6 +560,22 @@
                             <input type="number" id="stepScan" value="5" min="1">
                         </div>
                     </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;">
+                        <label style="display: flex; align-items: center; width: fit-content; margin: 0;">
+                            <input type="checkbox" id="useStability" checked style="margin: 0;">
+                            <span style="margin-left: 8px; white-space: nowrap;"><strong>穩定性</strong> - 標準差越小越好</span>
+                        </label>
+                        <label style="display: flex; align-items: center; width: fit-content; margin: 0;">
+                            <input type="checkbox" id="useConsistency" checked style="margin: 0;">
+                            <span style="margin-left: 8px; white-space: nowrap;"><strong>一致性</strong> - 獲利年份比例越高越好</span>
+                        </label>
+                        <label style="display: flex; align-items: center; width: fit-content; margin: 0;">
+                            <input type="checkbox" id="useReturn" checked style="margin: 0;">
+                            <span style="margin-left: 8px; white-space: nowrap;"><strong>報酬</strong> - 平均報酬率越高越好</span>
+                        </label>
+                    </div>
+
                     <button class="btn" onclick="findMildParameters()" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
                         🔍 開始掃描溫和參數
                     </button>

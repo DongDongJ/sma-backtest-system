@@ -1,6 +1,9 @@
 let csvData2 = null;
 let allOptimizationResults = [];
 let currentView = 'top';
+// 緩存年份分析的排名結果，避免重複計算
+let cachedMildParametersResults = null;
+let cachedMildParametersStockSymbol = null;
 let chartState = {
     visible: { price: true, shortMA: true, longMA: true, trades: true, volume: true },
     chartData: null,
@@ -405,24 +408,28 @@ function computeWMA(closes, window) {
     const wma = [];
     if (closes.length < window) return wma;
 
-    // 計算權重總和
+    // 計算權重總和 (1 + 2 + 3 + ... + window)
     let weightSum = 0;
     for (let i = 1; i <= window; i++) {
         weightSum += i;
     }
 
-    // 計算第一個 WMA 值
+    // 計算第一個 WMA 值（包含 closes[window-1] 即第一個窗口的今日）
     let weightedSum = 0;
     for (let i = 0; i < window; i++) {
         weightedSum += closes[i] * (i + 1);
     }
     wma.push(weightedSum / weightSum);
 
-    // 滑動計算後續 WMA 值
+    // 滑動計算後續 WMA 值（包含 closes[i] 即當日）
+    // 公式：(最新價×n + 次新×(n-1) + ... + 最舊×1) / (n + (n-1) + ... + 1)
     for (let i = window; i < closes.length; i++) {
         weightedSum = 0;
+        // 從最舊（closes[i-window+1]）到最新（closes[i]）
         for (let j = 0; j < window; j++) {
-            weightedSum += closes[i - window + 1 + j] * (j + 1);
+            const idx = i - window + 1 + j;           // 從舊到新的索引
+            const weight = j + 1;                     // 權重從1到window
+            weightedSum += closes[idx] * weight;
         }
         wma.push(weightedSum / weightSum);
     }
@@ -466,8 +473,12 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
         }
 
         // 黃金交叉 - 但避免在最後一天買入（避免當天買入當天賣出浪費手續費）
-        if (prevShortMA <= prevLongMA && currShortMA > currLongMA && shares === 0 && i < endIdx) {
-            shares = Math.floor(cash / (currPrice * 1.0008));
+        const isGoldenCross = prevShortMA <= prevLongMA && currShortMA > currLongMA;
+        const isDeathCross = prevShortMA >= prevLongMA && currShortMA < currLongMA;
+        
+        if (isGoldenCross && shares === 0 && i < endIdx) {
+            const effectivePrice = useCommission ? currPrice * 1.0008 : currPrice;
+            shares = Math.floor(cash / effectivePrice);
             const cost = shares * currPrice;
             cash -= cost;
             buyCommissionRecord = calculateCommissionAmount(currPrice, shares, useCommission);
@@ -485,7 +496,7 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
             });
         }
         // 死亡交叉
-        else if (prevShortMA >= prevLongMA && currShortMA < currLongMA && shares > 0) {
+        else if (isDeathCross && shares > 0) {
             const sellCommissionRecord = calculateCommissionAmount(currPrice, shares, useCommission);
             const revenue = shares * currPrice;
             cash += revenue - sellCommissionRecord;  // ✅ 只扣賣出手續費
@@ -794,17 +805,17 @@ function handleMouseMove(e) {
     const tooltip = document.getElementById('chartTooltip');
     
     let html = `<div class="tooltip-date">${chartData.dates[idx]}</div>`;
-    html += `<div class="tooltip-item"><span>價格:</span> <span class="tooltip-value">${chartData.prices[idx].toFixed(2)}</span></div>`;
+    html += `<div class="tooltip-item"><span>價格:</span> <span class="tooltip-value">${chartData.prices[idx].toFixed(30)}</span></div>`;
     
     if (chartData.volumes && chartData.volumes[idx]) {
         html += `<div class="tooltip-item" style="color:#9c27b0"><span>成交量:</span> <span class="tooltip-value">${chartData.volumes[idx].toLocaleString()}</span></div>`;
     }
     
     if (chartData.shortMA[idx]) {
-        html += `<div class="tooltip-item" style="color:#ff9800"><span>短均:</span> <span class="tooltip-value">${chartData.shortMA[idx].toFixed(2)}</span></div>`;
+        html += `<div class="tooltip-item" style="color:#ff9800"><span>短均:</span> <span class="tooltip-value">${chartData.shortMA[idx].toFixed(30)}</span></div>`;
     }
     if (chartData.longMA[idx]) {
-        html += `<div class="tooltip-item" style="color:#4caf50"><span>長均:</span> <span class="tooltip-value">${chartData.longMA[idx].toFixed(2)}</span></div>`;
+        html += `<div class="tooltip-item" style="color:#4caf50"><span>長均:</span> <span class="tooltip-value">${chartData.longMA[idx].toFixed(30)}</span></div>`;
     }
 
     // 添加價量關係分析
@@ -913,7 +924,7 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
         html += '<td onclick="' + detailFunc + '">' + r.shortMA + '</td>';
         html += '<td onclick="' + detailFunc + '">' + r.longMA + '</td>';
         html += '<td onclick="' + detailFunc + '">' + r.shortMAType + '</td>';
-        html += '<td onclick="' + detailFunc + '">$' + r.finalValue.toFixed(10) + '</td>';
+        html += '<td onclick="' + detailFunc + '">$' + r.finalValue.toFixed(2) + '</td>';
         if (useCommission) html += '<td onclick="' + detailFunc + '">$' + r.totalCommission.toFixed(2) + '</td>';
         html += '<td onclick="' + detailFunc + '">' + r.returnRate.toFixed(2) + '%</td>';
         html += '<td onclick="' + detailFunc + '">' + r.tradeCount + '</td>';
@@ -1147,8 +1158,38 @@ function compareParametersWithRank1(shortMA, longMA, maType) {
     const rank1 = allOptimizationResults[0];
     
     const data = parseCSVData(csvData2, stockSymbol);
+    
     let startIdx = data.dates.indexOf(startDate);
     let endIdx = data.dates.indexOf(endDate);
+    
+    // 防守：精確匹配失敗，嘗試日期物件比較（處理不同格式）
+    if (startIdx === -1) {
+        const startDateObj = new Date(startDate);
+        for (let i = 0; i < data.dates.length; i++) {
+            const currentDate = new Date(data.dates[i]);
+            if (currentDate >= startDateObj) {
+                startIdx = i;
+                break;
+            }
+        }
+        if (startIdx === -1) {
+            startIdx = 0;
+        }
+    }
+    
+    if (endIdx === -1) {
+        const endDateObj = new Date(endDate);
+        for (let i = data.dates.length - 1; i >= 0; i--) {
+            const currentDate = new Date(data.dates[i]);
+            if (currentDate <= endDateObj) {
+                endIdx = i;
+                break;
+            }
+        }
+        if (endIdx === -1) {
+            endIdx = data.dates.length - 1;
+        }
+    }
     
     const longerPeriod = Math.max(Math.max(shortMA, longMA), Math.max(rank1.shortMA, rank1.longMA));
     const extraDays = longerPeriod - 1;
@@ -1157,6 +1198,13 @@ function compareParametersWithRank1(shortMA, longMA, maType) {
 
     const expandedDates = data.dates.slice(dataStartIdx, endIdx + 1);
     const expandedCloses = data.closes.slice(dataStartIdx, endIdx + 1);
+    
+    // 防守：檢查擴展後的數據
+    if (expandedDates.length === 0 || expandedCloses.length === 0) {
+        console.error('❌ 擴展後數據為空', { expandedDatesLen: expandedDates.length, expandedClosesLen: expandedCloses.length });
+        showError('2', '無法獲取該日期範圍的數據');
+        return;
+    }
 
     // 回測當前參數
     const currentResult = backtest(expandedDates, expandedCloses, shortMA, longMA, initialCash, outputStartIdx, expandedDates.length - 1, maType, maType, useCommission);
@@ -1322,7 +1370,18 @@ function compareParametersWithRank1(shortMA, longMA, maType) {
  */
 function drawComparisonChart(dates, prices, trades1, trades2) {
     const canvas = document.getElementById('comparisonChart');
-    if (!canvas) return;
+    if (!canvas) {
+        console.error('❌ 找不到 canvas 元素 comparisonChart');
+        return;
+    }
+    
+    // 防守檢查：確保數據有效
+    if (!dates || !prices || dates.length === 0 || prices.length === 0) {
+        console.error('❌ 日期或價格數據為空', { datesLen: dates?.length, pricesLen: prices?.length });
+        return;
+    }
+    
+    console.log('📊 繪製對比圖表 - 日期:', dates.length, '筆, 交易1:', trades1?.length, '筆, 交易2:', trades2?.length, '筆');
     
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
@@ -1335,9 +1394,21 @@ function drawComparisonChart(dates, prices, trades1, trades2) {
     const width = canvas.width / dpr;
     const height = canvas.height / dpr;
     
-    // 計算價格範圍
+    // 計算價格範圍 - 添加防守
+    if (prices.length === 0) {
+        console.error('❌ 價格數組為空');
+        return;
+    }
+    
     let minPrice = Math.min(...prices);
     let maxPrice = Math.max(...prices);
+    
+    // 檢查是否都是 NaN 或無效值
+    if (!isFinite(minPrice) || !isFinite(maxPrice)) {
+        console.error('❌ 價格範圍無效', { minPrice, maxPrice });
+        return;
+    }
+    
     minPrice = minPrice * 0.98;
     maxPrice = maxPrice * 1.02;
     
@@ -1394,6 +1465,14 @@ function drawComparisonChart(dates, prices, trades1, trades2) {
 
     // 先掃描同一天有訊號的日期
     const tradesMap = {};
+    
+    // 添加防守：檢查交易數據
+    if (!trades1) trades1 = [];
+    if (!trades2) trades2 = [];
+    
+    console.log('🔍 交易1 數據:', trades1.slice(0, 3)); // 只打印前3筆用於調試
+    console.log('🔍 交易2 數據:', trades2.slice(0, 3));
+    
     trades1.forEach(trade => {
         if (!tradesMap[trade.date]) tradesMap[trade.date] = { rank1: null, compare: null };
         tradesMap[trade.date].rank1 = trade;
@@ -1406,62 +1485,68 @@ function drawComparisonChart(dates, prices, trades1, trades2) {
     // 繪製排名1的交易訊號 (綠色▲買入, 紅色▼賣出)
     trades1.forEach(trade => {
         const idx = dates.indexOf(trade.date);
-        if (idx !== -1) {
-            const x = getX(idx);
-            const y = getY(trade.price);
-            const hasBothSignals = tradesMap[trade.date].rank1 && tradesMap[trade.date].compare;
-            const offsetY = hasBothSignals ? -8 : 0;  // 同天有兩個訊號時向上偏移
-            
-            ctx.lineWidth = 1;
+        if (idx === -1) {
+            console.warn('⚠️ 找不到交易日期 trade.date:', trade.date, '在 dates 中');
+            return;
+        }
+        
+        const x = getX(idx);
+        const y = getY(trade.price);
+        const hasBothSignals = tradesMap[trade.date].rank1 && tradesMap[trade.date].compare;
+        const offsetY = hasBothSignals ? -8 : 0;  // 同天有兩個訊號時向上偏移
+        
+        ctx.lineWidth = 1;
 
-            if (trade.action === '買入' && window.comparisonSignalVisibility['rank1-buy']) {
-                ctx.fillStyle = '#4caf50';
-                ctx.beginPath();
-                ctx.moveTo(x, y - 12 + offsetY);
-                ctx.lineTo(x - 8, y + 6 + offsetY);
-                ctx.lineTo(x + 8, y + 6 + offsetY);
-                ctx.closePath();
-                ctx.fill();
-            } else if ((trade.action === '賣出' || trade.action === '期末賣出') && window.comparisonSignalVisibility['rank1-sell']) {
-                ctx.fillStyle = '#f44336';
-                ctx.beginPath();
-                ctx.moveTo(x, y + 12 + offsetY);
-                ctx.lineTo(x - 8, y - 6 + offsetY);
-                ctx.lineTo(x + 8, y - 6 + offsetY);
-                ctx.closePath();
-                ctx.fill();
-            }
+        if (trade.action === '買入' && window.comparisonSignalVisibility['rank1-buy']) {
+            ctx.fillStyle = '#4caf50';
+            ctx.beginPath();
+            ctx.moveTo(x, y - 12 + offsetY);
+            ctx.lineTo(x - 8, y + 6 + offsetY);
+            ctx.lineTo(x + 8, y + 6 + offsetY);
+            ctx.closePath();
+            ctx.fill();
+        } else if ((trade.action === '賣出' || trade.action === '期末賣出') && window.comparisonSignalVisibility['rank1-sell']) {
+            ctx.fillStyle = '#f44336';
+            ctx.beginPath();
+            ctx.moveTo(x, y + 12 + offsetY);
+            ctx.lineTo(x - 8, y - 6 + offsetY);
+            ctx.lineTo(x + 8, y - 6 + offsetY);
+            ctx.closePath();
+            ctx.fill();
         }
     });
 
     // 繪製對比參數的交易訊號 (藍色▲買入, 橙色▼賣出) - 同天訊號時向下堆疊
     trades2.forEach(trade => {
         const idx = dates.indexOf(trade.date);
-        if (idx !== -1) {
-            const x = getX(idx);
-            const y = getY(trade.price);
-            const hasBothSignals = tradesMap[trade.date].rank1 && tradesMap[trade.date].compare;
-            const offsetY = hasBothSignals ? 8 : 0;  // 同天有兩個訊號時向下偏移
-            
-            ctx.lineWidth = 1;
+        if (idx === -1) {
+            console.warn('⚠️ 找不到交易日期 trade.date:', trade.date, '在 dates 中');
+            return;
+        }
+        
+        const x = getX(idx);
+        const y = getY(trade.price);
+        const hasBothSignals = tradesMap[trade.date].rank1 && tradesMap[trade.date].compare;
+        const offsetY = hasBothSignals ? 8 : 0;  // 同天有兩個訊號時向下偏移
+        
+        ctx.lineWidth = 1;
 
-            if (trade.action === '買入' && window.comparisonSignalVisibility['compare-buy']) {
-                ctx.fillStyle = '#2196F3';
-                ctx.beginPath();
-                ctx.moveTo(x, y - 12 + offsetY);
-                ctx.lineTo(x - 8, y + 6 + offsetY);
-                ctx.lineTo(x + 8, y + 6 + offsetY);
-                ctx.closePath();
-                ctx.fill();
-            } else if ((trade.action === '賣出' || trade.action === '期末賣出') && window.comparisonSignalVisibility['compare-sell']) {
-                ctx.fillStyle = '#ff9800';
-                ctx.beginPath();
-                ctx.moveTo(x, y + 12 + offsetY);
-                ctx.lineTo(x - 8, y - 6 + offsetY);
-                ctx.lineTo(x + 8, y - 6 + offsetY);
-                ctx.closePath();
-                ctx.fill();
-            }
+        if (trade.action === '買入' && window.comparisonSignalVisibility['compare-buy']) {
+            ctx.fillStyle = '#2196F3';
+            ctx.beginPath();
+            ctx.moveTo(x, y - 12 + offsetY);
+            ctx.lineTo(x - 8, y + 6 + offsetY);
+            ctx.lineTo(x + 8, y + 6 + offsetY);
+            ctx.closePath();
+            ctx.fill();
+        } else if ((trade.action === '賣出' || trade.action === '期末賣出') && window.comparisonSignalVisibility['compare-sell']) {
+            ctx.fillStyle = '#ff9800';
+            ctx.beginPath();
+            ctx.moveTo(x, y + 12 + offsetY);
+            ctx.lineTo(x - 8, y - 6 + offsetY);
+            ctx.lineTo(x + 8, y - 6 + offsetY);
+            ctx.closePath();
+            ctx.fill();
         }
     });
 
@@ -2132,11 +2217,12 @@ function analyzeYearlyStability() {
             const resultsArray = Object.values(yearlyResults).sort((a, b) => a.year - b.year);
             const returnRates = resultsArray.map(r => r.returnRate);
             const finalValues = resultsArray.map(r => r.finalValue);
+            const avgReturnRate = returnRates.reduce((a, b) => a + b, 0) / returnRates.length;
             
             const stats = {
-                avgReturnRate: returnRates.reduce((a, b) => a + b, 0) / returnRates.length,
+                avgReturnRate: avgReturnRate,
                 stdDevReturnRate: Math.sqrt(
-                    returnRates.reduce((sum, val) => sum + Math.pow(val - returnRates[0], 2), 0) / returnRates.length
+                    returnRates.reduce((sum, val) => sum + Math.pow(val - avgReturnRate, 2), 0) / returnRates.length
                 ),
                 maxReturnRate: Math.max(...returnRates),
                 minReturnRate: Math.min(...returnRates),
@@ -2256,7 +2342,7 @@ function displayYearlyAnalysis(yearlyResults, stats, shortMA, longMA, maType, st
     `;
     
     // 評估參數的「溫和度」
-    const stabilityScore = 100 - Math.min(stats.stdDevReturnRate * 2, 100); // 標準差越小越好
+    const stabilityScore = 100 - Math.min(stats.stdDevReturnRate, 100); // 標準差越小越好
     const consistencyScore = (stats.positiveYears / yearlyResults.length) * 100; // 獲利年份比例
     const overallScore = (stabilityScore + consistencyScore) / 2;
     
@@ -2280,7 +2366,7 @@ function displayYearlyAnalysis(yearlyResults, stats, shortMA, longMA, maType, st
             </div>
             
             <div style="margin-top: 30px; text-align: center;">
-                <button class="btn" onclick="findMildParameters()" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <button class="btn" onclick="returnToMildParametersResults()" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
                     ← 回到參數排名
                 </button>
             </div>
@@ -2337,13 +2423,16 @@ function findMildParameters() {
             
             for (let s = minMA; s <= maxMA; s += step) {
                 for (let l = minMA; l <= maxMA; l += step) {
+                    // 短期MA必須小於長期MA
+                    if (s >= l) {
+                        continue;
+                    }
+                    
                     // 計算每個參數組合在各年份的表現
                     const yearlyResults = {};
                     const maxPeriod = Math.max(s, l);
                     const extraDays = maxPeriod - 1;
                     let validYears = 0;
-                    let sumStdDev = 0;
-                    let sumConsistency = 0;
                     
                     for (let year = startYear; year <= endYear; year++) {
                         // 找該年數據範圍
@@ -2383,10 +2472,32 @@ function findMildParameters() {
                         const posYears = returns.filter(r => r > 0).length;
                         const consistency = (posYears / returns.length) * 100;
                         
-                        // 溫和度評分：穩定性 33% + 一致性 33% + 平均回報 33%
+                        // 獲取用戶選擇的評分條件
+                        const useStability = document.getElementById('useStability').checked;
+                        const useConsistency = document.getElementById('useConsistency').checked;
+                        const useReturn = document.getElementById('useReturn').checked;
+                        
+                        // 計數選擇的條件數（用於動態分配權重）
+                        const selectedCount = (useStability ? 1 : 0) + (useConsistency ? 1 : 0) + (useReturn ? 1 : 0);
+                        
+                        if (selectedCount === 0) {
+                            showError('yearly', '請至少選擇一個評分條件');
+                            return;
+                        }
+                        
+                        // 計算各項評分
                         const stabilityScore = 100 - Math.min(stdDev, 100);
-                        const avgReturnPercentage = Math.min(avgReturn * 100, 100); // 轉換為0-100分
-                        const mildnessScore = stabilityScore * 0.33 + consistency * 0.33 + avgReturnPercentage * 0.33;
+                        // avgReturn 已經是百分比數字（如 19.20, 30.43 等）
+                        // 直接使用，上限 100 分
+                        const avgReturnPercentage = Math.min(Math.abs(avgReturn), 100);
+                        
+                        // 根據選擇的條件動態計算溫和度評分
+                        let mildnessScore = 0;
+                        const weight = 1 / selectedCount; // 每個選中條件的權重
+                        
+                        if (useStability) mildnessScore += stabilityScore * weight;
+                        if (useConsistency) mildnessScore += consistency * weight;
+                        if (useReturn) mildnessScore += avgReturnPercentage * weight;
                         
                         parameterScores.push({
                             shortMA: s,
@@ -2394,9 +2505,16 @@ function findMildParameters() {
                             avgReturn: avgReturn,
                             stdDev: stdDev,
                             consistency: consistency,
+                            stabilityScore: stabilityScore,
                             mildnessScore: mildnessScore,
                             validYears: validYears,
-                            yearlyResults: yearlyResults
+                            yearlyResults: yearlyResults,
+                            selectedCriteria: {
+                                useStability,
+                                useConsistency,
+                                useReturn,
+                                selectedCount
+                            }
                         });
                     }
                     
@@ -2409,6 +2527,10 @@ function findMildParameters() {
             
             // 排序：按溫和度評分從高到低
             parameterScores.sort((a, b) => b.mildnessScore - a.mildnessScore);
+            
+            // 緩存排名結果
+            cachedMildParametersResults = parameterScores;
+            cachedMildParametersStockSymbol = stockSymbol;
             
             displayMildParameterResults(parameterScores, stockSymbol);
             
@@ -2425,11 +2547,25 @@ function findMildParameters() {
  * 顯示溫和參數掃描結果
  */
 function displayMildParameterResults(parameterScores, stockSymbol) {
+    // 取得第一個參數的選擇條件（所有參數都使用相同的條件）
+    const criteria = parameterScores.length > 0 ? parameterScores[0].selectedCriteria : null;
+    
+    // 生成評分條件說明
+    let criteriaText = '';
+    if (criteria) {
+        const selected = [];
+        if (criteria.useStability) selected.push('穩定性');
+        if (criteria.useConsistency) selected.push('一致性');
+        if (criteria.useReturn) selected.push('報酬');
+        criteriaText = `評分基準：${selected.join(' + ')} (各占 ${(100 / criteria.selectedCount).toFixed(0)}%)`;
+    }
+    
     let html = `
         <div class="mild-parameters-container">
             <div class="analysis-header">
                 <h3>🌿 溫和參數掃描結果</h3>
                 <p>找尋在 2014-2024 各年份都表現穩定的參數組合</p>
+                ${criteriaText ? `<p style="color: #666; font-size: 0.95em; background: #f0f0f0; padding: 8px 12px; border-radius: 4px; display: inline-block;">${criteriaText}</p>` : ''}
             </div>
             
             <table class="parameters-ranking">
@@ -2502,6 +2638,20 @@ function testParameter(shortMA, longMA) {
     
     // 滾動到分析結果
     document.getElementById('resultsYearly').scrollIntoView({ behavior: 'smooth' });
+}
+
+/**
+ * 回到排名結果（直接顯示緩存的結果，不重新計算）
+ */
+function returnToMildParametersResults() {
+    if (cachedMildParametersResults && cachedMildParametersStockSymbol) {
+        displayMildParameterResults(cachedMildParametersResults, cachedMildParametersStockSymbol);
+        // 滾動到排名結果
+        document.getElementById('resultsYearly').scrollIntoView({ behavior: 'smooth' });
+    } else {
+        // 如果緩存不存在，則重新計算
+        findMildParameters();
+    }
 }
 
 function showError(mode, message) {

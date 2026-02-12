@@ -165,8 +165,11 @@ class VolumeSignalSystem {
       // 確保都有數值
       if (!prevShortMA || !currShortMA || !currLongMA) continue;
 
+      // 使用 epsilon 避免浮點精度誤差
+      const epsilon = 1e-10;
+      
       // 黃金交叉：短線從下穿過長線
-      if (prevShortMA <= prevLongMA && currShortMA > currLongMA) {
+      if ((prevShortMA - prevLongMA) < epsilon && (currShortMA - currLongMA) > epsilon) {
         const volumeInfo = this.evaluateVolumeStrength(currVolume, currAvgVolume);
         
         let signalType = '';
@@ -199,7 +202,7 @@ class VolumeSignalSystem {
       }
 
       // 死亡交叉：短線從上穿過長線
-      else if (prevShortMA >= prevLongMA && currShortMA < currLongMA) {
+      else if ((prevShortMA - prevLongMA) > -epsilon && (currShortMA - currLongMA) < -epsilon) {
         const volumeInfo = this.evaluateVolumeStrength(currVolume, currAvgVolume);
         
         let signalType = '';
@@ -358,9 +361,278 @@ class VolumeSignalSystem {
   getSignalsJSON() {
     return JSON.stringify(this.signals, null, 2);
   }
-}
 
-// ==================== 使用示例 ====================
+  /**
+   * 驗證 CSV 數據是否包含 ADX 計算所需的欄位
+   * @returns {Object} { isValid: boolean, missingFields: array, message: string }
+   */
+  validateDataForADX() {
+    if (!this.data || this.data.length === 0) {
+      return { isValid: false, missingFields: [], message: '❌ 無數據' };
+    }
+
+    const firstRecord = this.data[0];
+    const missingFields = [];
+
+    if (firstRecord.high === undefined || isNaN(firstRecord.high)) missingFields.push('High');
+    if (firstRecord.low === undefined || isNaN(firstRecord.low)) missingFields.push('Low');
+    if (firstRecord.close === undefined || isNaN(firstRecord.close)) missingFields.push('Close');
+    if (firstRecord.volume === undefined) missingFields.push('Volume');
+
+    if (missingFields.length > 0) {
+      return { 
+        isValid: false, 
+        missingFields: missingFields, 
+        message: `❌ 缺少欄位: ${missingFields.join(', ')}` 
+      };
+    }
+
+    if (this.data.length < 28) {
+      return { 
+        isValid: false, 
+        missingFields: [], 
+        message: `❌ 數據不足 (需要至少28根K線計算ADX，目前${this.data.length}根)` 
+      };
+    }
+
+    return { isValid: true, missingFields: [], message: '✅ 數據完整，可計算ADX' };
+  }
+
+  /**
+   * 計算 ATR (Average True Range)
+   * @param {Number} period - 周期（通常14）
+   * @returns {Array} ATR 值陣列
+   */
+  calculateATR(period = 14) {
+    const atr = new Array(this.data.length);
+    
+    // 計算 True Range
+    const tr = new Array(this.data.length);
+    for (let i = 0; i < this.data.length; i++) {
+      if (i === 0) {
+        tr[i] = this.data[i].high - this.data[i].low;
+      } else {
+        const hl = this.data[i].high - this.data[i].low;
+        const hc = Math.abs(this.data[i].high - this.data[i - 1].close);
+        const lc = Math.abs(this.data[i].low - this.data[i - 1].close);
+        tr[i] = Math.max(hl, hc, lc);
+      }
+    }
+
+    // 計算 ATR
+    let sum = 0;
+    for (let i = 0; i < period && i < this.data.length; i++) {
+      sum += tr[i];
+    }
+    atr[period - 1] = sum / period;
+
+    for (let i = period; i < this.data.length; i++) {
+      atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period;
+    }
+
+    return atr;
+  }
+
+  /**
+   * 計算 ADX (Average Directional Index) - 用於識別趨勢強度
+   * 過濾掉弱趨勢中的假訊號
+   * @param {Number} period - 周期（通常14）
+   * @returns {Object} { plus_di, minus_di, adx } - 三條線數據
+   */
+  calculateADX(period = 14) {
+    const length = this.data.length;
+    const plus_di = new Array(length).fill(0);
+    const minus_di = new Array(length).fill(0);
+    const adx = new Array(length).fill(0);
+
+    // 計算 +DM 和 -DM
+    const plus_dm = new Array(length).fill(0);
+    const minus_dm = new Array(length).fill(0);
+
+    for (let i = 1; i < length; i++) {
+      const up = this.data[i].high - this.data[i - 1].high;
+      const down = this.data[i - 1].low - this.data[i].low;
+
+      plus_dm[i] = (up > down && up > 0) ? up : 0;
+      minus_dm[i] = (down > up && down > 0) ? down : 0;
+    }
+
+    // 計算 ATR
+    const atr = this.calculateATR(period);
+
+    // 計算平滑的 +DM 和 -DM
+    let sum_plus_dm = 0, sum_minus_dm = 0;
+    for (let i = 0; i < period; i++) {
+      sum_plus_dm += plus_dm[i];
+      sum_minus_dm += minus_dm[i];
+    }
+
+    let smooth_plus_dm = sum_plus_dm;
+    let smooth_minus_dm = sum_minus_dm;
+
+    // 計算初始的 +DI 和 -DI
+    if (atr[period - 1] !== 0) {
+      plus_di[period - 1] = (smooth_plus_dm / atr[period - 1]) * 100;
+      minus_di[period - 1] = (smooth_minus_dm / atr[period - 1]) * 100;
+    }
+
+    // 後續平滑計算
+    for (let i = period; i < length; i++) {
+      smooth_plus_dm = smooth_plus_dm - plus_dm[i - period] + plus_dm[i];
+      smooth_minus_dm = smooth_minus_dm - minus_dm[i - period] + minus_dm[i];
+
+      if (atr[i] !== 0) {
+        plus_di[i] = (smooth_plus_dm / atr[i]) * 100;
+        minus_di[i] = (smooth_minus_dm / atr[i]) * 100;
+      }
+    }
+
+    // 計算 DI 和 ADX
+    const di = new Array(length).fill(0);
+    for (let i = period - 1; i < length; i++) {
+      const di_sum = plus_di[i] + minus_di[i];
+      di[i] = di_sum !== 0 ? Math.abs(plus_di[i] - minus_di[i]) / di_sum * 100 : 0;
+    }
+
+    // 計算平滑的 ADX
+    let sum_di = 0;
+    for (let i = period - 1; i < period - 1 + period && i < length; i++) {
+      sum_di += di[i];
+    }
+    
+    if (period - 1 + period <= length) {
+      adx[period - 1 + period - 1] = sum_di / period;
+    }
+
+    // 後續平滑計算
+    for (let i = period - 1 + period; i < length; i++) {
+      adx[i] = (adx[i - 1] * (period - 1) + di[i]) / period;
+    }
+
+    return { plus_di, minus_di, adx };
+  }
+
+  /**
+   * 評估 ADX 強度
+   * @param {Number} adxValue - ADX 值
+   * @returns {Object} { level, description }
+   */
+  assessADXStrength(adxValue) {
+    if (adxValue >= 40) {
+      return { level: '非常強', emoji: '🔴', strength: 4 };
+    } else if (adxValue >= 25) {
+      return { level: '強勢', emoji: '🟠', strength: 3 };
+    } else if (adxValue >= 20) {
+      return { level: '中等', emoji: '🟡', strength: 2 };
+    } else {
+      return { level: '弱勢', emoji: '🔵', strength: 1 };
+    }
+  }
+
+  /**
+   * 生成 SMA + ADX + 成交量 的複合交易訊號
+   * @param {Number} shortMA - 短期MA
+   * @param {Number} longMA - 長期MA
+   * @param {Number} minADX - 最小ADX閾值（過濾弱勢訊號）
+   * @param {Number} minVolumeRatio - 最小成交量比例
+   * @returns {Array} 經過過濾的交易訊號
+   */
+  generateSMA_ADX_VolumeSignals(shortMA = 20, longMA = 50, minADX = 25, minVolumeRatio = 1.0) {
+    // 計算指標
+    const shortSMA = this.calculateSMA(shortMA);
+    const longSMA = this.calculateSMA(longMA);
+    const adxData = this.calculateADX(14);
+    
+    // 計算平均成交量（不包含當天）
+    const avgVolumes = new Array(this.data.length);
+    for (let i = 0; i < this.data.length; i++) {
+      if (i < 20) {
+        avgVolumes[i] = null;
+      } else {
+        const sum = this.data.slice(i - 20, i).reduce((acc, d) => acc + d.volume, 0);
+        avgVolumes[i] = sum / 20;
+      }
+    }
+
+    const signals = [];
+
+    for (let i = 1; i < this.data.length; i++) {
+      // ✅ 修正：檢查 null/undefined，0 值也是有效的
+      if (shortSMA[i] === null || shortSMA[i] === undefined ||
+          longSMA[i] === null || longSMA[i] === undefined ||
+          adxData.adx[i] === null || adxData.adx[i] === undefined) {
+        continue;
+      }
+
+      const prevShortSMA = shortSMA[i - 1];
+      const prevLongSMA = longSMA[i - 1];
+      
+      // ✅ 修正：前一根也要檢查
+      if (prevShortSMA === null || prevShortSMA === undefined ||
+          prevLongSMA === null || prevLongSMA === undefined) {
+        continue;
+      }
+
+      const currShortSMA = shortSMA[i];
+      const currLongSMA = longSMA[i];
+      const currADX = adxData.adx[i];
+      const adxStrength = this.assessADXStrength(currADX);
+
+      // ✅ 修正：成交量比例的計算和驗證
+      const avgVolume = avgVolumes[i];
+      const volumeRatio = avgVolume && avgVolume > 0 ? this.data[i].volume / avgVolume : null;
+      
+      // ✅ 修正：成交量驗證邏輯 - 如果 avgVolume 為 null（早期數據），視為有效
+      const volumeValid = !volumeRatio || volumeRatio >= minVolumeRatio;
+
+      // 黃金交叉：短MA從下穿過長MA
+      if (prevShortSMA <= prevLongSMA && currShortSMA > currLongSMA) {
+        const isValid = currADX >= minADX && volumeValid;
+        
+        signals.push({
+          date: this.data[i].date,
+          type: '黃金交叉',
+          action: '買入',
+          price: this.data[i].close,
+          volume: this.data[i].volume,
+          volumeRatio: volumeRatio ? volumeRatio.toFixed(2) : 'N/A',
+          adx: currADX.toFixed(2),
+          adxLevel: adxStrength.level,
+          shortSMA: currShortSMA.toFixed(2),
+          longSMA: currLongSMA.toFixed(2),
+          isValid: isValid,
+          reason: isValid ? 
+            `✅ ADX=${currADX.toFixed(1)} (${adxStrength.level}) 成交量=${volumeRatio?.toFixed(2)}倍` :
+            `❌ ${currADX < minADX ? `ADX=${currADX.toFixed(1)} (過弱，需≥${minADX})` : `成交量=${volumeRatio?.toFixed(2)}倍 (不足，需≥${minVolumeRatio})`}`
+        });
+      }
+
+      // 死亡交叉：短MA從上穿過長MA
+      if (prevShortSMA >= prevLongSMA && currShortSMA < currLongSMA) {
+        const isValid = currADX >= minADX && volumeValid;
+        
+        signals.push({
+          date: this.data[i].date,
+          type: '死亡交叉',
+          action: '賣出',
+          price: this.data[i].close,
+          volume: this.data[i].volume,
+          volumeRatio: volumeRatio ? volumeRatio.toFixed(2) : 'N/A',
+          adx: currADX.toFixed(2),
+          adxLevel: adxStrength.level,
+          shortSMA: currShortSMA.toFixed(2),
+          longSMA: currLongSMA.toFixed(2),
+          isValid: isValid,
+          reason: isValid ? 
+            `✅ ADX=${currADX.toFixed(1)} (${adxStrength.level}) 成交量=${volumeRatio?.toFixed(2)}倍` :
+            `❌ ${currADX < minADX ? `ADX=${currADX.toFixed(1)} (過弱，需≥${minADX})` : `成交量=${volumeRatio?.toFixed(2)}倍 (不足，需≥${minVolumeRatio})`}`
+        });
+      }
+    }
+
+    return signals;
+  }
+}
 
 // 例子：在瀏覽器中使用
 window.VolumeSignalSystem = VolumeSignalSystem;

@@ -23,6 +23,7 @@
             <button class="tab" onclick="switchTab('heatmap')">3D 熱力圖分析</button>
             <button class="tab" onclick="switchTab('vixAnalysis')">📈 VIX 恐慌指數分析</button>
             <button class="tab" onclick="switchTab('yearly')">🌿 年份穩定性分析 (尋找溫和參數)</button>
+            <button class="tab" onclick="switchTab('diagnosis')">🔍 市場診斷 (自適應參數推薦)</button>
         </div>
 
         <div class="content">
@@ -588,6 +589,44 @@
                 </div>
                 <div class="results" id="resultsYearly"></div>
             </div>
+
+            <!-- 市場診斷標籤頁 -->
+            <div id="diagnosis" class="tab-content">
+                <h2>🔍 市場診斷 - 自適應參數推薦</h2>
+                <div class="info-box">
+                    根據選定年份及季度的市場特徵，自動分析歷史相似時期，推薦最適合的參數組合。
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label for="diagnosisYear">選擇診斷年份</label>
+                        <select id="diagnosisYear" title="選擇要診斷的年份">
+                            <option value="">請先上傳 CSV 檔案</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="diagnosisQuarter">選擇季度（可選）</label>
+                        <select id="diagnosisQuarter" title="選擇要診斷的季度，留空則使用整年">
+                            <option value="">全年</option>
+                            <option value="Q1">第1季 (1-3月)</option>
+                            <option value="Q2">第2季 (4-6月)</option>
+                            <option value="Q3">第3季 (7-9月)</option>
+                            <option value="Q4">第4季 (10-12月)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn" onclick="runMarketDiagnosis()">開始診斷</button>
+
+                <div class="error" id="errorDiagnosis"></div>
+                <div class="loading" id="loadingDiagnosis">
+                    <div class="spinner"></div>
+                    <p>正在分析市場特徵並搜尋相似年份...</p>
+                </div>
+
+                <div id="diagnosisResults" style="margin-top: 30px;"></div>
+            </div>
         </div>
     </div>
 
@@ -600,6 +639,7 @@
     <script src="heatmap_integration.js"></script>
     <script src="vix_sma_analysis.js"></script>
     <script src="vix_integration.js"></script>
+    <script src="market_diagnosis.js"></script>
     <script src="script.js"></script>
     <script src="kd_script.js"></script>
 </body>

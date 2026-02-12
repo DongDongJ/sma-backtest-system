@@ -113,6 +113,34 @@ function handleFileUpload(mode) {
                 stockSelect.appendChild(option);
                 stockSelect.value = fileName;
                 console.log('✅ 自動選擇股票:', fileName);
+                
+                // 💡 新增：填充診斷年份下拉菜單
+                if (mode === "2") {
+                    const years = new Set();
+                    const dateColIndex = headers.indexOf('Date');
+                    if (dateColIndex !== -1) {
+                        for (let i = 1; i < lines.length; i++) {
+                            const values = lines[i].split(',');
+                            if (values[dateColIndex]) {
+                                const dateStr = values[dateColIndex].trim();
+                                const year = parseInt(dateStr.split('/')[2]);
+                                if (!isNaN(year)) years.add(year);
+                            }
+                        }
+                    }
+                    
+                    const diagnosisYearSelect = document.getElementById('diagnosisYear');
+                    if (diagnosisYearSelect && years.size > 0) {
+                        diagnosisYearSelect.innerHTML = '<option value="">選擇診斷年份</option>';
+                        Array.from(years).sort().forEach(year => {
+                            const option = document.createElement('option');
+                            option.value = year;
+                            option.textContent = `${year} 年`;
+                            diagnosisYearSelect.appendChild(option);
+                        });
+                        console.log('✅ 已填充診斷年份:', Array.from(years).sort().join(', '));
+                    }
+                }
             } else {
                 // 舊格式：直接使用欄位名稱
                 headers.slice(1).forEach(header => {
@@ -145,12 +173,16 @@ function parseCSVData(csvData, stockSymbol) {
     const closes = [];
     const volumes = [];
     const opens = [];
+    const highs = [];  // 新增
+    const lows = [];   // 新增
     
     // 新格式處理 (Date, Open, High, Low, Close, Volume)
     if (csvData.format === 'new') {
         const closeColIndex = csvData.headers.indexOf('Close');
         const volumeColIndex = csvData.headers.indexOf('Volume');
         const openColIndex = csvData.headers.indexOf('Open');
+        const highColIndex = csvData.headers.indexOf('High');   // 新增
+        const lowColIndex = csvData.headers.indexOf('Low');     // 新增
         
         if (closeColIndex === -1) return null;
         
@@ -164,17 +196,21 @@ function parseCSVData(csvData, stockSymbol) {
                 const close = parseFloat(values[closeColIndex]);
                 const volume = volumeColIndex !== -1 ? parseInt(values[volumeColIndex]) : 0;
                 const open = openColIndex !== -1 ? parseFloat(values[openColIndex]) : close;
+                const high = highColIndex !== -1 ? parseFloat(values[highColIndex]) : close;   // 新增
+                const low = lowColIndex !== -1 ? parseFloat(values[lowColIndex]) : close;      // 新增
                 
                 if (!isNaN(close) && close > 0) {
                     dates.push(date);
                     closes.push(close);
                     volumes.push(volume);
                     opens.push(open);
+                    highs.push(isNaN(high) ? close : high);   // 新增
+                    lows.push(isNaN(low) ? close : low);      // 新增
                 }
             }
         }
         
-        return { dates, closes, volumes, opens };
+        return { dates, closes, volumes, opens, highs, lows };
     }
     
     // 舊格式處理
@@ -193,7 +229,7 @@ function parseCSVData(csvData, stockSymbol) {
         }
     }
 
-    return { dates, closes, volumes: [], opens: [] };
+    return { dates, closes, volumes: [], opens: [], highs: [], lows: [] };
 }
 
 // 計算手續費
@@ -261,13 +297,13 @@ function detectPriceVolumeRelation(closes, volumes, index) {
         };
     }
 
-    // 計算平均成交量 (最近20根，包含今天)
-    const lookbackPeriod = Math.min(20, index + 1);
+    // 計算平均成交量 (最近20根，不包含今天 - 符合市場標準)
+    const lookbackPeriod = Math.min(20, index);
     let avgVolume = 0;
-    for (let i = Math.max(0, index - lookbackPeriod + 1); i <= index; i++) {
+    for (let i = Math.max(0, index - lookbackPeriod); i < index; i++) {
         avgVolume += volumes[i];
     }
-    avgVolume /= lookbackPeriod;
+    avgVolume /= Math.max(1, lookbackPeriod);
 
     const currentPrice = closes[index];
     const previousPrice = closes[index - 1];
@@ -473,8 +509,10 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
         }
 
         // 黃金交叉 - 但避免在最後一天買入（避免當天買入當天賣出浪費手續費）
-        const isGoldenCross = prevShortMA <= prevLongMA && currShortMA > currLongMA;
-        const isDeathCross = prevShortMA >= prevLongMA && currShortMA < currLongMA;
+        // 使用 epsilon 避免浮點精度誤差 (173.07 的二進制表示可能有微小差異)
+        const epsilon = 1e-10;
+        const isGoldenCross = (prevShortMA - prevLongMA) < epsilon && (currShortMA - currLongMA) > epsilon;
+        const isDeathCross = (prevShortMA - prevLongMA) > -epsilon && (currShortMA - currLongMA) < -epsilon;
         
         if (isGoldenCross && shares === 0 && i < endIdx) {
             const effectivePrice = useCommission ? currPrice * 1.0008 : currPrice;
@@ -805,17 +843,17 @@ function handleMouseMove(e) {
     const tooltip = document.getElementById('chartTooltip');
     
     let html = `<div class="tooltip-date">${chartData.dates[idx]}</div>`;
-    html += `<div class="tooltip-item"><span>價格:</span> <span class="tooltip-value">${chartData.prices[idx].toFixed(30)}</span></div>`;
+    html += `<div class="tooltip-item"><span>價格:</span> <span class="tooltip-value">${chartData.prices[idx].toFixed(2)}</span></div>`;
     
     if (chartData.volumes && chartData.volumes[idx]) {
         html += `<div class="tooltip-item" style="color:#9c27b0"><span>成交量:</span> <span class="tooltip-value">${chartData.volumes[idx].toLocaleString()}</span></div>`;
     }
     
     if (chartData.shortMA[idx]) {
-        html += `<div class="tooltip-item" style="color:#ff9800"><span>短均:</span> <span class="tooltip-value">${chartData.shortMA[idx].toFixed(30)}</span></div>`;
+        html += `<div class="tooltip-item" style="color:#ff9800"><span>短均:</span> <span class="tooltip-value">${chartData.shortMA[idx].toFixed(8)}</span></div>`;
     }
     if (chartData.longMA[idx]) {
-        html += `<div class="tooltip-item" style="color:#4caf50"><span>長均:</span> <span class="tooltip-value">${chartData.longMA[idx].toFixed(30)}</span></div>`;
+        html += `<div class="tooltip-item" style="color:#4caf50"><span>長均:</span> <span class="tooltip-value">${chartData.longMA[idx].toFixed(8)}</span></div>`;
     }
 
     // 添加價量關係分析
@@ -869,6 +907,17 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
     
     window.cachedOptimizationResults = results;
     console.log('✅ 優化結果已存儲到 cachedOptimizationResults:', results.length, '條');
+    
+    // 🔴 新增：提取年份並保存前20個參數到 localStorage
+    const startDate = document.getElementById('startDate2').value;
+    const endDate = document.getElementById('endDate2').value;
+    if (startDate && endDate) {
+        const year = extractYearFromDateRange(startDate, endDate);
+        if (year) {
+            saveParametersToLocalStorage(stockSymbol, year, results.slice(0, 20));
+            console.log(`✅ 已保存 ${stockSymbol} ${year} 年的前20個參數到本地存儲`);
+        }
+    }
     
     const resultsDiv = document.getElementById('results2');
     const best = results[0];
@@ -1613,6 +1662,14 @@ function runOptimization() {
 
     console.log('📊 參數設置 - minMA:', minMA, 'maxMA:', maxMA, 'maType:', maType);
     
+    console.log('📈 開始進行批量優化...');
+    runOptimizationTraditional(stockSymbol, minMA, maxMA, maType, startDate, endDate, initialCash, useCommission);
+}
+
+/**
+ * 📊 傳統版：只用 SMA 回測
+ */
+function runOptimizationTraditional(stockSymbol, minMA, maxMA, maType, startDate, endDate, initialCash, useCommission) {
     document.getElementById('loading2').classList.add('show');
     document.getElementById('error2').classList.remove('show');
     document.getElementById('results2').classList.remove('show');
@@ -1662,7 +1719,7 @@ function runOptimization() {
         
         let calculationCount = 0;
         const startTime = performance.now();
-        const BATCH_SIZE = 50; // 每批處理 50 個計算，然後進行垃圾回收
+        const BATCH_SIZE = 50;
         let batchCount = 0;
 
         for (let s = minMA; s <= maxMA; s++) {
@@ -1673,21 +1730,18 @@ function runOptimization() {
                 calculationCount++;
                 batchCount++;
                 
-                // 每批處理後進行垃圾回收提示
                 if (batchCount >= BATCH_SIZE) {
                     batchCount = 0;
                     if (window.gc) {
-                        window.gc(); // 如果開啟了手動垃圾回收
+                        window.gc();
                     }
                 }
                 
-                // 每 100 個計算打印一次進度
                 if (calculationCount % 100 === 0 || calculationCount === totalCalcs) {
                     const elapsed = (performance.now() - startTime) / 1000;
                     const rate = calculationCount / elapsed;
                     const remaining = (totalCalcs - calculationCount) / rate;
-                    const memUsage = performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(1) : '?';
-                    console.log(`   進度: ${calculationCount}/${totalCalcs} (${Math.round(calculationCount/totalCalcs*100)}%) - 耗時: ${elapsed.toFixed(1)}s, 剩餘: ${remaining.toFixed(1)}s, 記憶體: ${memUsage}MB`);
+                    console.log(`   進度: ${calculationCount}/${totalCalcs} (${Math.round(calculationCount/totalCalcs*100)}%) - 耗時: ${elapsed.toFixed(1)}s, 剩餘: ${remaining.toFixed(1)}s`);
                 }
             }
         }
@@ -1955,10 +2009,10 @@ function getTradeRecommendation(action, volumeStrength) {
  */
 function computeAverageVolume(volumes, period) {
     return volumes.map((_, index) => {
-        if (index < period - 1) return null;
+        if (index < period) return null;  // 需要至少 period 根K線（不包含當天）
         
         const sum = volumes
-            .slice(index - period + 1, index + 1)
+            .slice(index - period, index)  // 不包含當天（index）
             .reduce((acc, v) => acc + v, 0);
         
         return sum / period;
@@ -2655,9 +2709,63 @@ function returnToMildParametersResults() {
 }
 
 function showError(mode, message) {
-    const errorDiv = document.getElementById(`error${mode.charAt(0).toUpperCase() + mode.slice(1)}`);
+    // ✅ 修正：處理數字和字串類型
+    let errorDivId;
+    if (typeof mode === 'number') {
+        errorDivId = `error${mode}`;
+    } else {
+        errorDivId = `error${mode.charAt(0).toUpperCase() + mode.slice(1)}`;
+    }
+    const errorDiv = document.getElementById(errorDivId);
     if (errorDiv) {
         errorDiv.textContent = message;
         errorDiv.classList.add('show');
+    }
+}
+
+// ==================== 市場診斷模組 (新增) ====================
+
+/**
+ * 從日期範圍中提取年份
+ */
+function extractYearFromDateRange(startDate, endDate) {
+    if (!startDate) return null;
+    const parts = startDate.split('/');
+    if (parts.length === 3) {
+        // MM/DD/YYYY 格式
+        if (parts[2].length === 4) {
+            return parseInt(parts[2]);
+        }
+        // YYYY/MM/DD 格式
+        else if (parts[0].length === 4) {
+            return parseInt(parts[0]);
+        }
+    }
+    return null;
+}
+
+/**
+ * 保存優化參數到 localStorage
+ */
+function saveParametersToLocalStorage(stockSymbol, year, topParameters) {
+    try {
+        const key = `optimized_params_${stockSymbol}_${year}`;
+        const paramData = {
+            symbol: stockSymbol,
+            year: year,
+            timestamp: new Date().toISOString(),
+            parameters: topParameters.map(p => ({
+                shortMA: p.shortMA,
+                longMA: p.longMA,
+                shortMAType: p.shortMAType,
+                longMAType: p.longMAType,
+                returnRate: p.returnRate,
+                rank: topParameters.indexOf(p) + 1
+            }))
+        };
+        localStorage.setItem(key, JSON.stringify(paramData));
+        console.log(`✅ 已保存 ${key}，包含 ${topParameters.length} 個參數`);
+    } catch (error) {
+        console.warn('⚠️ localStorage 保存失敗:', error);
     }
 }

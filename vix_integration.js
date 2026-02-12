@@ -738,12 +738,15 @@ function detectCrossovers(shortMA, longMA, dates) {
     // 跳過null值
     if (!prevShort || !currShort || !prevLong || !currLong) continue;
     
+    // 使用 epsilon 避免浮點精度誤差
+    const epsilon = 1e-10;
+    
     // 黃金交叉：短期MA從下方穿過長期MA
-    if (prevShort <= prevLong && currShort > currLong) {
+    if ((prevShort - prevLong) < epsilon && (currShort - currLong) > epsilon) {
       goldenCrosses.push({ date: dates[i], index: i });
     }
     // 死亡交叉：短期MA從上方穿過長期MA
-    else if (prevShort >= prevLong && currShort < currLong) {
+    else if ((prevShort - prevLong) > -epsilon && (currShort - currLong) < -epsilon) {
       deathCrosses.push({ date: dates[i], index: i });
     }
   }

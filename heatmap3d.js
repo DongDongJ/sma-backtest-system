@@ -10,7 +10,7 @@
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
         script.onload = function() {
-            console.log('✅ 備用 CDN 已加載 Three.js');
+            console.log('✅ 備用 CDN 已加載 Three.js')
         };
         script.onerror = function() {
             console.error('❌ 備用 CDN 也失敗');

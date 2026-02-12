@@ -191,8 +191,11 @@ function backtestKD(dates, closes, N, M1, M2, initialCash, outputStartIdx, useCo
         const prevD = kd.d[i - 1];
         const currPrice = closes[i];
 
+        // 使用 epsilon 避免浮點精度誤差
+        const epsilon = 1e-10;
+
         // 金叉：K 從下向上穿過 D，買入
-        if (prevK <= prevD && currK > currD && !inPosition && shares === 0) {
+        if ((prevK - prevD) < epsilon && (currK - currD) > epsilon && !inPosition && shares === 0) {
             shares = Math.floor(cash / (currPrice * 1.0008));
             const cost = shares * currPrice;
             cash -= cost;
@@ -215,7 +218,7 @@ function backtestKD(dates, closes, N, M1, M2, initialCash, outputStartIdx, useCo
             });
         }
         // 死叉：K 從上向下穿過 D，賣出
-        else if (prevK >= prevD && currK < currD && inPosition && shares > 0) {
+        else if ((prevK - prevD) > -epsilon && (currK - currD) < -epsilon && inPosition && shares > 0) {
             const sellCommissionRecord = calculateCommissionKD(currPrice, shares, useCommission);
             const revenue = shares * currPrice;
             cash += revenue - buyCommissionRecord - sellCommissionRecord;

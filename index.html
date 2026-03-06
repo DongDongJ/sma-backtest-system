@@ -19,6 +19,7 @@
 
         <div class="tabs">
             <button class="tab active" onclick="switchTab('optimize')">移動平均線模式 (SMA/EMA/WMA)</button>
+            <button class="tab" onclick="switchTab('walkforward')">🪟 滑動窗口</button>
             <button class="tab" onclick="switchTab('kd')">KD 指標模式</button>
             <button class="tab" onclick="switchTab('heatmap')">3D 熱力圖分析</button>
             <button class="tab" onclick="switchTab('vixAnalysis')">📈 VIX 恐慌指數分析</button>
@@ -156,6 +157,87 @@
                     <p>正在測試所有參數組合...</p>
                 </div>
                 <div class="results" id="results2"></div>
+            </div>
+
+            <!-- 行走式向前驗證 -->
+            <div id="walkforward" class="tab-content">
+                <h2>🪟 滑動窗口分析</h2>
+                <div class="info-box">
+                    模擬真實交易環境：用歷史數據優化策略參數，然後在下一個時期測試。對比前一個窗口的策略在新時期的表現變化，評估策略穩定性。
+                </div>
+
+                <div class="form-group">
+                    <label for="csvFileWF">📁 上傳 CSV 檔案</label>
+                    <div class="file-upload" onclick="document.getElementById('csvFileWF').click()">
+                        <input type="file" id="csvFileWF" accept=".csv" style="display:none" onchange="handleFileUpload('WF')" title="上傳 CSV 股票數據檔案">
+                        <p id="fileNameWF">點擊上傳或拖放 CSV 檔案</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="stockSelectWF">選擇股票代碼</label>
+                    <select id="stockSelectWF" title="選擇要分析的股票代碼" aria-label="股票代碼">
+                        <option value="">請先上傳 CSV 檔案</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="maTypeWF">均線類型</label>
+                    <select id="maTypeWF" title="選擇均線計算方法" aria-label="均線類型">
+                        <option value="SMA">SMA (簡單移動平均)</option>
+                        <option value="EMA">EMA (指數移動平均)</option>
+                        <option value="WMA">WMA (加權移動平均)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center;">
+                        <input type="checkbox" id="useCommissionWF" style="width: auto; margin: 0;">
+                        <span style="margin-left: 2px;">使用手續費計算 (0.08%)</span>
+                    </label>
+                </div>
+
+                <h3>⚙️ 窗口配置</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="windowSizeWF">窗口大小 (天數)</label>
+                        <input type="number" id="windowSizeWF" value="252" min="50" title="每個窗口的數據天數 (252=年線)">
+                    </div>
+                    <div class="form-group">
+                        <label for="trainingRatioWF">訓練比例 (%)</label>
+                        <input type="number" id="trainingRatioWF" value="70" min="50" max="80" title="窗口中訓練期的比例 (70-80%)">
+                    </div>
+                    <div class="form-group">
+                        <label for="stepSizeWF">步進大小 (天數)</label>
+                        <input type="number" id="stepSizeWF" value="20" min="5" title="每次窗口移動的天數 (20-30推薦)">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="minMAWF">最小均線天數</label>
+                        <input type="number" id="minMAWF" value="3" min="1" title="輸入最小均線天數">
+                    </div>
+                    <div class="form-group">
+                        <label for="maxMAWF">最大均線天數</label>
+                        <input type="number" id="maxMAWF" value="30" min="1" title="輸入最大均線天數">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="initialCashWF">初始資金 ($)</label>
+                    <input type="number" id="initialCashWF" value="10000" min="1" title="輸入初始資金金額">
+                </div>
+
+                <button class="btn" onclick="runWalkForwardAnalysis()">開始分析</button>
+
+                <div class="error" id="errorWF"></div>
+                <div class="loading" id="loadingWF">
+                    <div class="spinner"></div>
+                    <p>正在執行滑動窗口分析...</p>
+                    <p id="progressWF" style="font-size: 12px; color: #888; margin-top: 10px;"></p>
+                </div>
+                <div class="results" id="resultsWF"></div>
             </div>
 
             <!-- KD 指標模式 -->
@@ -492,11 +574,18 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>開始年份</label>
-                        <input type="number" id="startYearYearly" value="2014" min="2000">
+                        <input type="number" id="startYearYearly" value="2014" min="2000" onchange="updateYearCheckboxes()">
                     </div>
                     <div class="form-group">
                         <label>結束年份</label>
-                        <input type="number" id="endYearYearly" value="2024" min="2000">
+                        <input type="number" id="endYearYearly" value="2024" min="2000" onchange="updateYearCheckboxes()">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>選擇年份 (勾選要分析的年份)</label>
+                    <div id="yearCheckboxContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; padding: 15px; background: #f9f9f9; border-radius: 6px; max-height: 200px; overflow-y: auto;">
+                        <small style="grid-column: 1/-1; color: #999;">請先輸入年份範圍</small>
                     </div>
                 </div>
 
@@ -640,6 +729,7 @@
     <script src="vix_sma_analysis.js"></script>
     <script src="vix_integration.js"></script>
     <script src="market_diagnosis.js"></script>
+    <script src="walkforward_analysis.js"></script>
     <script src="script.js"></script>
     <script src="kd_script.js"></script>
 </body>

@@ -42,6 +42,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    // 新增：初始化年份穩定性分析的勾選框
+    updateYearCheckboxes();
 });
 
 function switchTab(tab) {
@@ -50,6 +53,11 @@ function switchTab(tab) {
     
     event.target.classList.add('active');
     document.getElementById(tab).classList.add('active');
+    
+    // 新增：當切換到年份穩定性分析標籤時，生成年份勾選框
+    if (tab === 'yearly') {
+        setTimeout(() => updateYearCheckboxes(), 100);
+    }
 }
 
 function handleFileUpload(mode) {
@@ -99,8 +107,8 @@ function handleFileUpload(mode) {
             
             stockSelect.innerHTML = '<option value="">選擇股票數據</option>';
             
-            // 檢查是否是新格式 (包含 Date, Close, Volume 等欄位)
-            const hasNewFormat = headers.includes('Date') && headers.includes('Close') && headers.includes('Volume');
+            // 檢查是否是新格式 (包含 Date 和 Close 欄位，Volume 是可選的)
+            const hasNewFormat = headers.includes('Date') && headers.includes('Close');
             
             console.log('📊 CSV 格式:', hasNewFormat ? '新格式' : '舊格式');
             
@@ -176,23 +184,25 @@ function parseCSVData(csvData, stockSymbol) {
     const highs = [];  // 新增
     const lows = [];   // 新增
     
-    // 新格式處理 (Date, Open, High, Low, Close, Volume)
+    // 新格式處理 (Date, Close, Volume 等欄位)
     if (csvData.format === 'new') {
         const closeColIndex = csvData.headers.indexOf('Close');
+        const dateColIndex = csvData.headers.indexOf('Date');
         const volumeColIndex = csvData.headers.indexOf('Volume');
         const openColIndex = csvData.headers.indexOf('Open');
         const highColIndex = csvData.headers.indexOf('High');   // 新增
         const lowColIndex = csvData.headers.indexOf('Low');     // 新增
         
         if (closeColIndex === -1) return null;
+        const actualDateColIndex = dateColIndex !== -1 ? dateColIndex : 0; // 如果找不到Date列，用第一列
         
         for (let i = 1; i < csvData.lines.length; i++) {
             const line = csvData.lines[i].trim();
             if (!line) continue;
             
             const values = line.split(',').map(v => v.trim());
-            if (values.length > closeColIndex && values[0]) {
-                const date = values[0];
+            if (values.length > closeColIndex && values[actualDateColIndex]) {
+                const date = values[actualDateColIndex];
                 const close = parseFloat(values[closeColIndex]);
                 const volume = volumeColIndex !== -1 ? parseInt(values[volumeColIndex]) : 0;
                 const open = openColIndex !== -1 ? parseFloat(values[openColIndex]) : close;
@@ -213,8 +223,16 @@ function parseCSVData(csvData, stockSymbol) {
         return { dates, closes, volumes, opens, highs, lows };
     }
     
-    // 舊格式處理
-    const targetCol = csvData.headers.indexOf(stockSymbol);
+    // 舊格式處理（多股票 CSV：Date, AAPL, AMGN, AMZN...）
+    // 尋找與 stockSymbol 名稱匹配的列（不區分大小寫）
+    let targetCol = -1;
+    for (let i = 0; i < csvData.headers.length; i++) {
+        if (csvData.headers[i].toUpperCase() === stockSymbol.toUpperCase()) {
+            targetCol = i;
+            break;
+        }
+    }
+    
     if (targetCol === -1) return null;
 
     for (let i = 1; i < csvData.lines.length; i++) {
@@ -2158,6 +2176,34 @@ function analyzeVolumeSignals() {
 // ==================== 年份穩定性分析模組 (新增) ====================
 
 /**
+ * 更新年份勾選框
+ * 根據開始和結束年份動態生成勾選框
+ */
+function updateYearCheckboxes() {
+    const startYear = parseInt(document.getElementById('startYearYearly').value);
+    const endYear = parseInt(document.getElementById('endYearYearly').value);
+    const container = document.getElementById('yearCheckboxContainer');
+    
+    if (!startYear || !endYear || startYear > endYear) {
+        container.innerHTML = '<small style="grid-column: 1/-1; color: #999;">請輸入有效的年份範圍</small>';
+        return;
+    }
+    
+    let html = '';
+    for (let year = startYear; year <= endYear; year++) {
+        html += `
+            <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" class="yearCheckbox" value="${year}" checked style="cursor: pointer; margin-right: 5px;">
+                <span>${year}年</span>
+            </label>
+        `;
+    }
+    
+    container.innerHTML = html;
+    console.log(`✅ 已生成 ${endYear - startYear + 1} 個年份勾選框`);
+}
+
+/**
  * 年份穩定性分析
  * 用於找「溫和參數」：在多年回測中都表現穩定、排名一致的參數
  */
@@ -2170,8 +2216,10 @@ function analyzeYearlyStability() {
     const maType = document.getElementById('maTypeYearly').value;
     const initialCash = parseFloat(document.getElementById('initialCashYearly').value);
     const useCommission = document.getElementById('useCommissionYearly').checked;
-    const startYear = parseInt(document.getElementById('startYearYearly').value);
-    const endYear = parseInt(document.getElementById('endYearYearly').value);
+    
+    // 新增：獲取勾選的年份
+    const selectedYearCheckboxes = document.querySelectorAll('.yearCheckbox:checked');
+    const selectedYears = Array.from(selectedYearCheckboxes).map(cb => parseInt(cb.value));
     
     if (!csvData2) {
         showError('yearly', '請先上傳 CSV 檔案');
@@ -2183,10 +2231,12 @@ function analyzeYearlyStability() {
         return;
     }
     
-    if (startYear > endYear) {
-        showError('yearly', '開始年份不能大於結束年份');
+    if (selectedYears.length === 0) {
+        showError('yearly', '請至少勾選一個年份');
         return;
     }
+    
+    console.log(`📅 已選擇年份: ${selectedYears.join(', ')}`);
     
     document.getElementById('loadingYearly').classList.add('show');
     document.getElementById('errorYearly').classList.remove('show');
@@ -2200,22 +2250,22 @@ function analyzeYearlyStability() {
                 return;
             }
             
-            // 按年份分組數據
+            // 按年份分組數據 (只針對勾選的年份)
             const yearlyData = {};
-            for (let year = startYear; year <= endYear; year++) {
+            selectedYears.forEach(year => {
                 yearlyData[year] = {
                     dates: [],
                     closes: [],
                     startDate: `1/1/${year}`,
                     endDate: `12/31/${year}`
                 };
-            }
+            });
             
             // 填充數據
             for (let i = 0; i < data.dates.length; i++) {
                 const date = new Date(data.dates[i]);
                 const year = date.getFullYear();
-                if (year >= startYear && year <= endYear) {
+                if (yearlyData[year]) {
                     yearlyData[year].dates.push(data.dates[i]);
                     yearlyData[year].closes.push(data.closes[i]);
                 }
@@ -2226,9 +2276,9 @@ function analyzeYearlyStability() {
             const maxPeriod = Math.max(shortMA, longMA);
             const extraDays = maxPeriod - 1;
             
-            for (let year = startYear; year <= endYear; year++) {
+            for (let year of selectedYears) {
                 const yearData = yearlyData[year];
-                if (yearData.closes.length < maxPeriod) {
+                if (!yearData || yearData.closes.length < maxPeriod) {
                     console.warn(`⚠️ ${year}年數據不足，跳過`);
                     continue;
                 }
@@ -2443,11 +2493,13 @@ function findMildParameters() {
     const maType = document.getElementById('maTypeYearly').value;
     const initialCash = parseFloat(document.getElementById('initialCashYearly').value);
     const useCommission = document.getElementById('useCommissionYearly').checked;
-    const startYear = parseInt(document.getElementById('startYearYearly').value);
-    const endYear = parseInt(document.getElementById('endYearYearly').value);
     const minMA = parseInt(document.getElementById('minMAScan').value || '5');
     const maxMA = parseInt(document.getElementById('maxMAScan').value || '100');
     const step = parseInt(document.getElementById('stepScan').value || '5');
+    
+    // 新增：獲取勾選的年份
+    const selectedYearCheckboxes = document.querySelectorAll('.yearCheckbox:checked');
+    const selectedYears = Array.from(selectedYearCheckboxes).map(cb => parseInt(cb.value));
     
     if (!csvData2) {
         showError('yearly', '請先上傳 CSV 檔案');
@@ -2458,6 +2510,13 @@ function findMildParameters() {
         showError('yearly', '請選擇股票代碼');
         return;
     }
+    
+    if (selectedYears.length === 0) {
+        showError('yearly', '請至少勾選一個年份');
+        return;
+    }
+    
+    console.log(`📅 已選擇年份: ${selectedYears.join(', ')}`);
     
     document.getElementById('loadingYearly').classList.add('show');
     document.getElementById('errorYearly').classList.remove('show');
@@ -2482,13 +2541,13 @@ function findMildParameters() {
                         continue;
                     }
                     
-                    // 計算每個參數組合在各年份的表現
+                    // 計算每個參數組合在各年份的表現 (只針對勾選的年份)
                     const yearlyResults = {};
                     const maxPeriod = Math.max(s, l);
                     const extraDays = maxPeriod - 1;
                     let validYears = 0;
                     
-                    for (let year = startYear; year <= endYear; year++) {
+                    for (let year of selectedYears) {
                         // 找該年數據範圍
                         let fullStartIdx = -1, fullEndIdx = -1;
                         for (let i = 0; i < data.dates.length; i++) {

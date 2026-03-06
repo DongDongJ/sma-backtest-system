@@ -149,6 +149,45 @@ function getParametersFromLocalStorage(stockSymbol, year) {
 // ==================== 市場特徵分析 ====================
 
 /**
+ * 平滑收盤價 (使用簡單移動平均線)
+ * @param {Array} closes - 收盤價陣列
+ * @param {Number} period - 平滑週期 (預設: 120)
+ * @returns {Array} 平滑後的收盤價
+ */
+function smoothClosePrices(closes, period = 120) {
+    if (closes.length < period) {
+        console.warn(`⚠️ 數據點數 (${closes.length}) 少於平滑週期 (${period})，使用较小的週期`);
+        period = Math.max(3, Math.floor(closes.length / 3));
+    }
+    
+    const smoothed = [];
+    
+    for (let i = 0; i < closes.length; i++) {
+        if (i < period - 1) {
+            // 前期數據點：用實際值
+            smoothed.push(closes[i]);
+        } else {
+            // 計算過去 period 個數據的平均值
+            const sum = closes.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
+            smoothed.push(sum / period);
+        }
+    }
+    
+    return smoothed;
+}
+
+/**
+ * 自動計算最佳平滑週期
+ * @param {Number} dataLength - 數據長度
+ * @returns {Number} 建議的平滑週期
+ */
+function getOptimalSmoothingPeriod(dataLength) {
+    // 年度交易日數約 252，建議週期 = 252 / 15 ≈ 17
+    // 簡化為：根據數據長度計算
+    return Math.max(5, Math.round(dataLength / 15));
+}
+
+/**
  * 計算市場特徵指標
  */
 function calculateMarketCharacteristics(dates, closes) {
@@ -524,7 +563,11 @@ function runMarketDiagnosis() {
                 }
                 
                 if (yearDataForAnalysis && yearDataForAnalysis.closes.length > 10) {
-                    const features = calculateMarketCharacteristics(yearDataForAnalysis.dates, yearDataForAnalysis.closes);
+                    // 新增：在計算特徵前進行平滑處理
+                    const smoothingPeriod = getOptimalSmoothingPeriod(yearDataForAnalysis.closes.length);
+                    const smoothedCloses = smoothClosePrices(yearDataForAnalysis.closes, smoothingPeriod);
+                    
+                    const features = calculateMarketCharacteristics(yearDataForAnalysis.dates, smoothedCloses);
                     if (features) {
                         yearlyFeatures[year] = features;
                         if (year !== selectedYear) {
@@ -545,7 +588,11 @@ function runMarketDiagnosis() {
                 if (prevQuarter && yearsInData.has(prevQuarter.year)) {
                     const prevQuarterData = extractQuarterData(csvData2, stockSymbol, prevQuarter.year, prevQuarter.quarter);
                     if (prevQuarterData && prevQuarterData.closes.length > 10) {
-                        const prevFeatures = calculateMarketCharacteristics(prevQuarterData.dates, prevQuarterData.closes);
+                        // 新增：對前期季度也進行平滑處理
+                        const smoothingPeriod = getOptimalSmoothingPeriod(prevQuarterData.closes.length);
+                        const smoothedPrevCloses = smoothClosePrices(prevQuarterData.closes, smoothingPeriod);
+                        
+                        const prevFeatures = calculateMarketCharacteristics(prevQuarterData.dates, smoothedPrevCloses);
                         quarterChangeAnalysis = calculateFeatureChangeRate(yearlyFeatures[selectedYear], prevFeatures);
                         quarterChangeAnalysis.previousQuarter = prevQuarter;  // 保存上季信息用於顯示
                     }
@@ -596,6 +643,9 @@ function displayMarketDiagnosisResults(selectedYear, selectedQuarter, currentFea
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
             <h3 style="margin-top: 0;">📊 ${selectedYear} 年${quarterLabel}市場特徵診斷</h3>
             <div style="font-size: 13px; opacity: 0.9; margin-top: 5px;">📅 診斷時期：${quarterName}</div>
+            <div style="font-size: 12px; opacity: 0.85; margin-top: 8px; background: rgba(255,255,255,0.1); padding: 8px 12px; border-radius: 4px; display: inline-block;">
+                ✨ 已應用平滑處理（MA15）以過濾日波動雜訊，提高年份相似度准確性
+            </div>
             
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
                 <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 6px;">

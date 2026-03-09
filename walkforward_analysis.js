@@ -308,16 +308,24 @@ function performWalkForwardAnalysis(dates, closes, windowSize, trainingRatio, st
         );
         
         // 在測試期測試新優化的參數
+        // 向前提取數據，確保測試期第一天就有完整的MA線
+        const maxPeriod = Math.max(optimizedParams.shortMA, optimizedParams.longMA);
+        const extraDays = maxPeriod - 1;
+        const testingDataStartIdx = Math.max(window.trainingEndIdx - extraDays, window.startIdx);
+        const testingOutputStartIdx = window.trainingEndIdx - testingDataStartIdx;
+        const expandedTestingDates = dates.slice(testingDataStartIdx, window.endIdx);
+        const expandedTestingCloses = closes.slice(testingDataStartIdx, window.endIdx);
+        
         let newParamsResult = null;
         try {
             newParamsResult = backtest(
-                testingDates,
-                testingCloses,
+                expandedTestingDates,
+                expandedTestingCloses,
                 optimizedParams.shortMA,
                 optimizedParams.longMA,
                 initialCash,
-                Math.max(optimizedParams.shortMA, optimizedParams.longMA),
-                testingCloses.length - 1,
+                testingOutputStartIdx,
+                expandedTestingDates.length - 1,
                 maType,
                 maType,
                 useCommission
@@ -331,14 +339,22 @@ function performWalkForwardAnalysis(dates, closes, windowSize, trainingRatio, st
         let previousParamsResult = null;
         if (previousParams) {
             try {
+                // 向前提取數據，確保第一天就有完整的MA線
+                const prevMaxPeriod = Math.max(previousParams.shortMA, previousParams.longMA);
+                const prevExtraDays = prevMaxPeriod - 1;
+                const prevTestingDataStartIdx = Math.max(window.trainingEndIdx - prevExtraDays, window.startIdx);
+                const prevTestingOutputStartIdx = window.trainingEndIdx - prevTestingDataStartIdx;
+                const prevExpandedTestingDates = dates.slice(prevTestingDataStartIdx, window.endIdx);
+                const prevExpandedTestingCloses = closes.slice(prevTestingDataStartIdx, window.endIdx);
+                
                 previousParamsResult = backtest(
-                    testingDates,
-                    testingCloses,
+                    prevExpandedTestingDates,
+                    prevExpandedTestingCloses,
                     previousParams.shortMA,
                     previousParams.longMA,
                     initialCash,
-                    Math.max(previousParams.shortMA, previousParams.longMA),
-                    testingCloses.length - 1,
+                    prevTestingOutputStartIdx,
+                    prevExpandedTestingDates.length - 1,
                     maType,
                     maType,
                     useCommission

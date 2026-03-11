@@ -80,11 +80,11 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>開始日期</label>
-                        <input type="text" id="startDate2" value="1/1/2024" placeholder="M/D/YYYY">
+                        <input type="text" id="startDate2" value="2024/01/01" placeholder="YYYY/MM/DD">
                     </div>
                     <div class="form-group">
                         <label>結束日期</label>
-                        <input type="text" id="endDate2" value="12/31/2024" placeholder="M/D/YYYY">
+                        <input type="text" id="endDate2" value="2024/12/31" placeholder="YYYY/MM/DD">
                     </div>
                 </div>
 
@@ -675,6 +675,7 @@
                 <div class="loading" id="loadingYearly">
                     <div class="spinner"></div>
                     <p>正在分析年份穩定性...</p>
+                    <p id="progressYearly" style="font-size: 12px; color: #888; margin-top: 10px;"></p>
                 </div>
                 <div class="results" id="resultsYearly"></div>
             </div>

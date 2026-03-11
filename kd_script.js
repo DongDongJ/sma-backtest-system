@@ -42,26 +42,80 @@ function handleFileUploadKD() {
         const stockSelect = document.getElementById('stockSelectKD');
         stockSelect.innerHTML = '<option value="">選擇股票代碼</option>';
         
-        headers.slice(1).forEach(header => {
-            if (header) {
+        // 檢查是否是多股票並行格式 (例如: AAPL_Open, AAPL_High, AAPL_Close, AMGN_Open...)
+        const multiStockPattern = /_Open|_High|_Low|_Close|_Volume/;
+        const hasMultiStockFormat = headers.some(h => multiStockPattern.test(h));
+        
+        let csvFormat = 'old';
+        
+        if (hasMultiStockFormat) {
+            // 多股票並行格式：提取唯一的股票代碼
+            const stocks = new Set();
+            headers.forEach(header => {
+                const match = header.match(/^(.+?)_(Open|High|Low|Close|Volume)$/);
+                if (match) {
+                    stocks.add(match[1]); // 提取股票符號
+                }
+            });
+            
+            stocks.forEach(stock => {
                 const option = document.createElement('option');
-                option.value = header;
-                option.textContent = header;
+                option.value = stock;
+                option.textContent = stock;
                 stockSelect.appendChild(option);
-            }
-        });
+            });
+            
+            csvFormat = 'multi';
+            console.log('✅ KD 多股票格式，已偵測到:', Array.from(stocks).join(', '));
+        } else {
+            // 舊格式：直接使用欄位名稱
+            headers.slice(1).forEach(header => {
+                if (header) {
+                    const option = document.createElement('option');
+                    option.value = header;
+                    option.textContent = header;
+                    stockSelect.appendChild(option);
+                }
+            });
+        }
 
-        csvDataKD = { headers, lines };
+        csvDataKD = { headers, lines, format: csvFormat };
     };
     reader.readAsText(file);
 }
 
 function parseCSVDataKD(csvData, stockSymbol) {
-    const targetCol = csvData.headers.indexOf(stockSymbol);
-    if (targetCol === -1) return null;
-
     const dates = [];
     const closes = [];
+    
+    // 多股票並行格式處理
+    if (csvData.format === 'multi') {
+        const dateColIndex = csvData.headers.indexOf('Date');
+        const closeColIndex = csvData.headers.indexOf(`${stockSymbol}_Close`);
+        
+        if (closeColIndex === -1) {
+            console.error(`❌ 找不到 ${stockSymbol}_Close 欄位`);
+            return null;
+        }
+        
+        for (let i = 1; i < csvData.lines.length; i++) {
+            const values = csvData.lines[i].split(',');
+            if (values.length > closeColIndex && values[dateColIndex]) {
+                const date = values[dateColIndex].trim();
+                const close = parseFloat(values[closeColIndex]);
+                if (date && !isNaN(close) && close > 0) {
+                    dates.push(date);
+                    closes.push(close);
+                }
+            }
+        }
+        
+        return { dates, closes };
+    }
+    
+    // 舊格式處理
+    const targetCol = csvData.headers.indexOf(stockSymbol);
+    if (targetCol === -1) return null;
 
     for (let i = 1; i < csvData.lines.length; i++) {
         const values = csvData.lines[i].split(',');

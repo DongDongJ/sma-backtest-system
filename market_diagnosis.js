@@ -540,8 +540,11 @@ function runMarketDiagnosis() {
             // 找出 CSV 中包含的所有年份
             const yearsInData = new Set();
             data.dates.forEach(dateStr => {
-                const year = parseInt(dateStr.split('/')[2]);
-                yearsInData.add(year);
+                // 提取年份：支持 YYYY/MM/DD、YYYY/M/D、YYYY-MM-DD 等格式
+                const yearMatch = dateStr.match(/(\d{4})/);
+                if (yearMatch) {
+                    yearsInData.add(parseInt(yearMatch[1]));
+                }
             });
             
             if (!yearsInData.has(selectedYear)) {

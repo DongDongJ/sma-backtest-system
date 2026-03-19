@@ -1140,7 +1140,33 @@ function showDetailedResult(shortMADays, longMADays, maType = 'SMA') {
     const expandedDates = data.dates.slice(dataStartIdx, endIdx + 1);
     const expandedCloses = data.closes.slice(dataStartIdx, endIdx + 1);
 
-    const result = backtest(expandedDates, expandedCloses, shortMADays, longMADays, initialCash, outputStartIdx, expandedDates.length - 1, maType, maType, useCommission);
+    // 🔧 修復：直接使用預計算的結果，而不是重新計算，確保與排名表一致
+    let result = null;
+    let rankPosition = '未知';
+    if (allOptimizationResults && allOptimizationResults.length > 0) {
+        for (let i = 0; i < allOptimizationResults.length; i++) {
+            const r = allOptimizationResults[i];
+            if (r.shortMA === shortMADays && r.longMA === longMADays && r.shortMAType === maType) {
+                result = r;  // ✅ 使用預計算的結果
+                rankPosition = i + 1;
+                break;
+            }
+        }
+    }
+    
+    // 備用方案：如果找不到預計算結果，才進行重新計算
+    if (!result) {
+        console.warn('⚠️ 未找到預計算結果，進行重新計算...', { shortMADays, longMADays, maType, allResultsCount: allOptimizationResults.length });
+        result = backtest(expandedDates, expandedCloses, shortMADays, longMADays, initialCash, outputStartIdx, expandedDates.length - 1, maType, maType, useCommission);
+    }
+    
+    // 確保 trades 是數組
+    if (!result.trades) {
+        result.trades = [];
+    }
+    if (!Array.isArray(result.trades)) {
+        result.trades = [];
+    }
 
     const shortMA = computeMA(expandedCloses, shortMADays, maType);
     const longMA = computeMA(expandedCloses, longMADays, maType);
@@ -1157,18 +1183,6 @@ function showDetailedResult(shortMADays, longMADays, maType = 'SMA') {
         const longIdx = i - (longMADays - 1);
         chartShortMA.push(shortIdx >= 0 && shortIdx < shortMA.length ? shortMA[shortIdx] : null);
         chartLongMA.push(longIdx >= 0 && longIdx < longMA.length ? longMA[longIdx] : null);
-    }
-
-    // 查找該組合在排名中的位置
-    let rankPosition = '未知';
-    if (allOptimizationResults && allOptimizationResults.length > 0) {
-        for (let i = 0; i < allOptimizationResults.length; i++) {
-            const r = allOptimizationResults[i];
-            if (r.shortMA === shortMADays && r.longMA === longMADays && r.shortMAType === maType) {
-                rankPosition = i + 1;
-                break;
-            }
-        }
     }
 
     let html = `
@@ -1239,7 +1253,7 @@ function showDetailedResult(shortMADays, longMADays, maType = 'SMA') {
 
             ${generateVolumeAnalysis(data, result.trades, shortMADays, longMADays) || ''}
 
-            ${result.trades.length > 0 ? `
+            ${result.trades && result.trades.length > 0 ? `
                 <h4 style="margin-top: 30px;">📋 交易明細</h4>
                 <div class="table-container">
                     <table>
@@ -1256,12 +1270,12 @@ function showDetailedResult(shortMADays, longMADays, maType = 'SMA') {
                         <tbody>
                             ${result.trades.map(trade => `
                                 <tr>
-                                    <td>${trade.date}</td>
-                                    <td style="color: ${trade.action === '買入' ? '#4caf50' : (trade.action === '賣出' ? '#f44336' : '#000')}; font-weight: bold;">${trade.action}</td>
-                                    <td>${trade.price.toFixed(2)}</td>
-                                    <td>${Math.floor(trade.shares)}</td>
-                                    ${useCommission ? `<td>${trade.buyCommission.toFixed(2)}</td><td>${trade.sellCommission.toFixed(2)}</td>` : ''}
-                                    <td>${trade.cashAfter.toFixed(2)}</td>
+                                    <td>${trade.date || 'N/A'}</td>
+                                    <td style="color: ${trade.action === '買入' ? '#4caf50' : (trade.action === '賣出' ? '#f44336' : '#000')}; font-weight: bold;">${trade.action || '未知'}</td>
+                                    <td>${(trade.price !== undefined ? trade.price : 0).toFixed(2)}</td>
+                                    <td>${Math.floor(trade.shares || 0)}</td>
+                                    ${useCommission ? `<td>${(trade.buyCommission !== undefined ? trade.buyCommission : 0).toFixed(2)}</td><td>${(trade.sellCommission !== undefined ? trade.sellCommission : 0).toFixed(2)}</td>` : ''}
+                                    <td>${(trade.cashAfter !== undefined ? trade.cashAfter : 0).toFixed(2)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -1361,8 +1375,13 @@ function compareParametersWithRank1(shortMA, longMA, maType) {
     // 回測當前參數
     const currentResult = backtest(expandedDates, expandedCloses, shortMA, longMA, initialCash, outputStartIdx, expandedDates.length - 1, maType, maType, useCommission);
     
-    // 回測排名1參數
-    const rank1Result = backtest(expandedDates, expandedCloses, rank1.shortMA, rank1.longMA, initialCash, outputStartIdx, expandedDates.length - 1, rank1.shortMAType, rank1.shortMAType, useCommission);
+    // 🔧 修復：排名1的結果應該直接使用預計算結果，確保與排名表一致
+    let rank1Result = rank1;  // 直接使用預計算的結果
+    // 備用方案：如果預計算結果中缺少必要的數據，才進行重新計算
+    if (!rank1Result.trades || !Array.isArray(rank1Result.trades)) {
+        console.warn('⚠️ 排名1預計算結果缺少 trades 數據，進行重新計算...');
+        rank1Result = backtest(expandedDates, expandedCloses, rank1.shortMA, rank1.longMA, initialCash, outputStartIdx, expandedDates.length - 1, rank1.shortMAType, rank1.shortMAType, useCommission);
+    }
 
     // 生成對比內容
     let html = `
@@ -1892,6 +1911,184 @@ function runOptimizationTraditional(stockSymbol, minMA, maxMA, maType, startDate
 
         displayOptimizationResults(allOptimizationResults, initialCash, stockSymbol, useCommission);
         console.log('✅ 優化完成！已顯示結果');
+        document.getElementById('loading2').classList.remove('show');
+    }, 100);
+}
+
+/**
+ * 🚀 執行成交量確認制優化
+ * 按鈕：執行方案 A：成交量確認制
+ */
+function runOptimizationWithVolumeConfirmation() {
+    console.log('🔄 開始成交量確認制優化...');
+    
+    // 清除舊數據
+    allOptimizationResults = [];
+    window.cachedOptimizationResults = [];
+    
+    const stockSymbol = document.getElementById('stockSelect2').value;
+    const minMA = parseInt(document.getElementById('minMA').value);
+    const maxMA = parseInt(document.getElementById('maxMA').value);
+    const startDate = document.getElementById('startDate2').value;
+    const endDate = document.getElementById('endDate2').value;
+    const initialCash = parseFloat(document.getElementById('initialCash2').value);
+    const useCommission = document.getElementById('useCommission2').checked;
+
+    if (!csvData2) {
+        showError(2, '請先上傳 CSV 檔案');
+        return;
+    }
+
+    if (!stockSymbol) {
+        showError(2, '請選擇股票代碼');
+        return;
+    }
+
+    if (minMA >= maxMA) {
+        showError(2, '最小均線天數必須小於最大均線天數');
+        return;
+    }
+
+    console.log('📊 成交量確認制參數設置 - minMA:', minMA, 'maxMA:', maxMA);
+    
+    console.log('📈 開始進行批量優化 (使用成交量確認制)...');
+    runOptimizationWithVolumeConfirmationTraditional(stockSymbol, minMA, maxMA, startDate, endDate, initialCash, useCommission);
+}
+
+/**
+ * 成交量確認制版本回測優化
+ */
+function runOptimizationWithVolumeConfirmationTraditional(stockSymbol, minMA, maxMA, startDate, endDate, initialCash, useCommission) {
+    document.getElementById('loading2').classList.add('show');
+    document.getElementById('error2').classList.remove('show');
+    document.getElementById('results2').classList.remove('show');
+
+    setTimeout(() => {
+        const data = parseCSVData(csvData2, stockSymbol);
+        if (!data) {
+            showError(2, '無法解析股票資料');
+            document.getElementById('loading2').classList.remove('show');
+            return;
+        }
+
+        let startIdx = data.dates.indexOf(startDate);
+        let endIdx = data.dates.indexOf(endDate);
+
+        if (startIdx === -1) {
+            const startObj = new Date(startDate);
+            startIdx = data.dates.findIndex(d => new Date(d) >= startObj);
+        }
+        if (endIdx === -1) {
+            const endObj = new Date(endDate);
+            for (let i = data.dates.length - 1; i >= 0; i--) {
+                if (new Date(data.dates[i]) <= endObj) {
+                    endIdx = i;
+                    break;
+                }
+            }
+        }
+
+        if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) {
+            showError(2, '日期範圍無效或找不到資料');
+            document.getElementById('loading2').classList.remove('show');
+            return;
+        }
+
+        const maxPeriod = maxMA;
+        const extraDays = maxPeriod - 1;
+        const dataStartIdx = Math.max(0, startIdx - extraDays);
+        const outputStartIdx = startIdx - dataStartIdx;
+        const expandedDates = data.dates.slice(dataStartIdx, endIdx + 1);
+        const expandedCloses = data.closes.slice(dataStartIdx, endIdx + 1);
+        const expandedVolumes = data.volumes.slice(dataStartIdx, endIdx + 1);
+
+        console.log('📈 開始迴圈計算 (成交量確認制)...');
+        console.log('   數據範圍:', expandedDates.length, '天');
+        const totalCalcs = (maxMA - minMA + 1) * (maxMA - minMA + 1);
+        console.log('   參數組合數:', totalCalcs);
+        
+        let calculationCount = 0;
+        const startTime = performance.now();
+        const BATCH_SIZE = 50;
+        let batchCount = 0;
+
+        for (let s = minMA; s <= maxMA; s++) {
+            for (let l = minMA; l <= maxMA; l++) {
+                // 🔧 修復：傳入 outputStartIdx，確保只交易指定日期範圍內的信號
+                const result = backtestWithVolumeConfirmation(
+                    expandedDates, 
+                    expandedCloses,
+                    expandedVolumes,
+                    s, 
+                    l, 
+                    initialCash, 
+                    useCommission,
+                    outputStartIdx  // ✅ 添加此參數
+                );
+                allOptimizationResults.push(result);
+                
+                calculationCount++;
+                batchCount++;
+                
+                if (batchCount >= BATCH_SIZE) {
+                    batchCount = 0;
+                    if (window.gc) {
+                        window.gc();
+                    }
+                }
+                
+                if (calculationCount % 100 === 0 || calculationCount === totalCalcs) {
+                    const elapsed = (performance.now() - startTime) / 1000;
+                    const rate = calculationCount / elapsed;
+                    const remaining = (totalCalcs - calculationCount) / rate;
+                    console.log(`   進度: ${calculationCount}/${totalCalcs} (${Math.round(calculationCount/totalCalcs*100)}%) - 耗時: ${elapsed.toFixed(1)}s, 剩餘: ${remaining.toFixed(1)}s`);
+                }
+            }
+        }
+        
+        const totalTime = (performance.now() - startTime) / 1000;
+        console.log('✅ 成交量確認制計算完成！總耗時:', totalTime.toFixed(2), '秒，開始排序...');
+
+        allOptimizationResults.sort((a, b) => {
+            if (Math.abs(a.finalValue - b.finalValue) > 0.0001) {
+                return b.finalValue - a.finalValue;
+            }
+            const diffA = Math.abs(a.longMA - a.shortMA);
+            const diffB = Math.abs(b.longMA - b.shortMA);
+            if (diffA !== diffB) {
+                return diffB - diffA;
+            }
+            if (a.shortMA !== b.shortMA) {
+                return a.shortMA - b.shortMA;
+            }
+            return a.longMA - b.longMA;
+        });
+
+        // 保存最佳參數到 localStorage
+        if (allOptimizationResults.length > 0) {
+          const bestResult = allOptimizationResults[0];
+          const startYear = new Date(startDate).getFullYear();
+          const endYear = new Date(endDate).getFullYear();
+          const yearKey = startYear === endYear ? startYear : `${startYear}-${endYear}`;
+          
+          const bestParamsData = {
+            shortMA: bestResult.shortMA,
+            longMA: bestResult.longMA,
+            returnRate: ((bestResult.finalValue - initialCash) / initialCash * 100).toFixed(2),
+            finalValue: bestResult.finalValue.toFixed(2),
+            dateRange: `${startDate} 至 ${endDate}`,
+            year: yearKey,
+            stockSymbol: stockSymbol,
+            strategy: '成交量確認制',
+            savedTime: new Date().toLocaleString('zh-TW')
+          };
+          
+          localStorage.setItem(`bestMAParams_${yearKey}_volumeConfirmation`, JSON.stringify(bestParamsData));
+          console.log('💾 已保存最佳參數到 localStorage:', bestParamsData);
+        }
+
+        displayOptimizationResults(allOptimizationResults, initialCash, stockSymbol, useCommission);
+        console.log('✅ 成交量確認制優化完成！已顯示結果');
         document.getElementById('loading2').classList.remove('show');
     }, 100);
 }

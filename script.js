@@ -1043,6 +1043,11 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
     let html = '<div class="result-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"><h3>🏆 最佳策略 - ' + stockSymbol + '</h3><div class="result-stats">';
     html += '<div class="stat-item"><div class="stat-label">短期均線</div><div class="stat-value">' + best.shortMA + ' 天 (' + best.shortMAType + ')</div></div>';
     html += '<div class="stat-item"><div class="stat-label">長期均線</div><div class="stat-value">' + best.longMA + ' 天 (' + best.longMAType + ')</div></div>';
+    // 新增：顯示成交量參數（如果存在，表示是成交量確認制）
+    if (best.volumeMultiplier !== undefined) {
+        html += '<div class="stat-item"><div class="stat-label">放量倍數</div><div class="stat-value">' + best.volumeMultiplier.toFixed(2) + ' 倍</div></div>';
+        html += '<div class="stat-item"><div class="stat-label">平均成交量周期</div><div class="stat-value">' + best.volumeMAWindow + ' 天</div></div>';
+    }
     html += '<div class="stat-item"><div class="stat-label">初始資金</div><div class="stat-value">$' + initialCash.toFixed(2) + '</div></div>';
     html += '<div class="stat-item"><div class="stat-label">最終資產</div><div class="stat-value">$' + best.finalValue.toFixed(2) + '</div></div>';
     if (useCommission) {
@@ -1054,7 +1059,12 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
     
     html += '<div class="view-tabs"><button class="view-tab active" onclick="switchResultView(' + "'top'" + ')">🏆 最佳排名</button>';
     html += '<button class="view-tab" onclick="switchResultView(' + "'bottom'" + ')">💔 最差排名</button></div>';
-    html += '<div class="table-container"><table><thead><tr><th>排名</th><th>短期MA</th><th>長期MA</th><th>均線類型</th><th>最終資產</th>';
+    html += '<div class="table-container"><table><thead><tr><th>排名</th><th>短期MA</th><th>長期MA</th><th>均線類型</th>';
+    // 新增：成交量參數表格列
+    if (best.volumeMultiplier !== undefined) {
+        html += '<th>放量倍數</th><th>成交量周期</th>';
+    }
+    html += '<th>最終資產</th>';
     if (useCommission) html += '<th>總手續費</th>';
     html += '<th>報酬率</th><th>交易數</th><th>對比工具</th></tr></thead><tbody>';
     
@@ -1076,6 +1086,11 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
         html += '<td onclick="' + detailFunc + '">' + r.shortMA + '</td>';
         html += '<td onclick="' + detailFunc + '">' + r.longMA + '</td>';
         html += '<td onclick="' + detailFunc + '">' + r.shortMAType + '</td>';
+        // 新增：成交量參數表格列
+        if (best.volumeMultiplier !== undefined) {
+            html += '<td onclick="' + detailFunc + '">' + (r.volumeMultiplier ? r.volumeMultiplier.toFixed(2) : '1.20') + ' 倍</td>';
+            html += '<td onclick="' + detailFunc + '">' + (r.volumeMAWindow || 20) + ' 天</td>';
+        }
         html += '<td onclick="' + detailFunc + '">$' + r.finalValue.toFixed(2) + '</td>';
         if (useCommission) html += '<td onclick="' + detailFunc + '">$' + r.totalCommission.toFixed(2) + '</td>';
         html += '<td onclick="' + detailFunc + '">' + r.returnRate.toFixed(2) + '%</td>';
@@ -1964,6 +1979,9 @@ function runOptimizationWithVolumeConfirmationTraditional(stockSymbol, minMA, ma
     document.getElementById('results2').classList.remove('show');
 
     setTimeout(() => {
+        // ✅ 初始化結果數組
+        allOptimizationResults = [];
+        
         const data = parseCSVData(csvData2, stockSymbol);
         if (!data) {
             showError(2, '無法解析股票資料');
@@ -2014,7 +2032,11 @@ function runOptimizationWithVolumeConfirmationTraditional(stockSymbol, minMA, ma
 
         for (let s = minMA; s <= maxMA; s++) {
             for (let l = minMA; l <= maxMA; l++) {
-                // 🔧 修復：傳入 outputStartIdx，確保只交易指定日期範圍內的信號
+                // 讀取用戶自訂的成交量參數
+                const volumeMultiplier = parseFloat(document.getElementById('volumeMultiplier').value) || 1.2;
+                const volumeMAWindow = parseInt(document.getElementById('volumeMAWindow').value) || 20;
+                
+                // 🔧 修復：傳入 outputStartIdx，以及自訂的成交量參數
                 const result = backtestWithVolumeConfirmation(
                     expandedDates, 
                     expandedCloses,
@@ -2023,10 +2045,14 @@ function runOptimizationWithVolumeConfirmationTraditional(stockSymbol, minMA, ma
                     l, 
                     initialCash, 
                     useCommission,
-                    outputStartIdx  // ✅ 添加此參數
+                    outputStartIdx,  // ✅ 交易開始索引
+                    volumeMultiplier, // ✅ 放量倍數
+                    volumeMAWindow    // ✅ 平均成交量天數
                 );
-                allOptimizationResults.push(result);
                 
+                // ✅ 將結果推入數組
+                allOptimizationResults.push(result);
+
                 calculationCount++;
                 batchCount++;
                 

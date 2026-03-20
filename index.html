@@ -23,6 +23,7 @@
             <button class="tab" onclick="switchTab('kd')">KD 指標模式</button>
             <button class="tab" onclick="switchTab('heatmap')">3D 熱力圖分析</button>
             <button class="tab" onclick="switchTab('vixAnalysis')">📈 VIX 恐慌指數分析</button>
+            <button class="tab" onclick="switchTab('obv')">💧 OBV + MA 成交量分析</button>
             <button class="tab" onclick="switchTab('yearly')">🌿 年份穩定性分析 (尋找溫和參數)</button>
             <button class="tab" onclick="switchTab('diagnosis')">🔍 市場診斷 (自適應參數推薦)</button>
         </div>
@@ -134,9 +135,22 @@
                 <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-left: 4px solid #ff9800; border-radius: 5px;">
                     <h3 style="color: #e65100; margin-top: 0;">📊 方案 A：成交量確認制 (最安全)</h3>
                     <div class="info-box" style="background: #ffe0b2; border-left: 3px solid #ff9800;">
-                        <strong>✅ 核心特徵：</strong>只在放量 (成交量 > 1.2倍平均) 時才執行買入/賣出訊號
+                        <strong>✅ 核心特徵：</strong>只在放量 (成交量 > N倍平均) 時才執行買入/賣出訊號
                         <br>✅ <strong>優點：</strong>大幅減少假信號 (減少 50~70%)，最安全保守
                         <br>ℹ️ <strong>缺點：</strong>可能錯過部分無量機會，交易次數較少
+                    </div>
+
+                    <div class="form-row" style="margin-top: 15px;">
+                        <div class="form-group">
+                            <label for="volumeMultiplier">📊 放量倍數條件</label>
+                            <input type="number" id="volumeMultiplier" value="1.2" min="1.0" max="3.0" step="0.1" title="當成交量 > 此倍數 × 平均成交量時視為放量">
+                            <small style="display: block; color: #666; margin-top: 5px;">範圍：1.0~3.0 (1.2 = 成交量 > 1.2倍平均)</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="volumeMAWindow">📅 平均成交量周期 (天)</label>
+                            <input type="number" id="volumeMAWindow" value="20" min="1" max="256" step="1" title="計算平均成交量的天數">
+                            <small style="display: block; color: #666; margin-top: 5px;">範圍：1~256天 (20天為業界標準)</small>
+                        </div>
                     </div>
                     
                     <button class="btn" onclick="runOptimizationWithVolumeConfirmation()" 
@@ -554,6 +568,90 @@
                 <div class="results" id="resultsVIX"></div>
             </div>
 
+            <!-- OBV + MA 成交量分析模式 -->
+            <div id="obv" class="tab-content">
+                <h2>💧 OBV + MA 成交量分析</h2>
+                <div class="info-box">
+                    <strong>核心概念:</strong> OBV (On Balance Volume) 追蹤資金流向，結合 MA 移動平均線可以：
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li>📊 <strong>OBV-MA 交叉</strong>：OBV 上穿/下穿其移動平均線作為交易信號</li>
+                        <li>🔀 <strong>雙 MA 確認</strong>：結合價格 MA 與 OBV-MA，提高信號準確度</li>
+                        <li>⚠️ <strong>背離檢測</strong>：檢測價格與 OBV 不同步的反轉信號</li>
+                    </ul>
+                </div>
+
+                <div class="form-group">
+                    <label for="csvFileOBV">📁 上傳 CSV 檔案</label>
+                    <div class="file-upload" onclick="document.getElementById('csvFileOBV').click()">
+                        <input type="file" id="csvFileOBV" accept=".csv" style="display:none" onchange="handleFileUpload('OBV')" title="上傳 CSV 股票數據檔案">
+                        <p id="fileNameOBV">點擊上傳或拖放 CSV 檔案</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="stockSelectOBV">選擇股票代碼</label>
+                    <select id="stockSelectOBV" title="選擇要分析的股票代碼">
+                        <option value="">請先上傳 CSV 檔案</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>分析策略</label>
+                    <select id="obvStrategy" title="選擇 OBV 分析策略">
+                        <option value="simple">簡單版 (OBV-MA 交叉)</option>
+                        <option value="dual">進階版 (價格 MA + OBV-MA 雙重確認)</option>
+                    </select>
+                </div>
+
+                <div id="obvSimpleParams" class="form-group">
+                    <label for="obvMA_Period">OBV 移動平均周期 (天)</label>
+                    <input type="number" id="obvMA_Period" value="14" min="1" title="OBV 移動平均線周期">
+                </div>
+
+                <div id="obvDualParams" class="form-group" style="display: none;">
+                    <label for="shortMA_OBV">短期價格 MA 周期 (天)</label>
+                    <input type="number" id="shortMA_OBV" value="9" min="1">
+                    <label for="longMA_OBV" style="margin-top: 10px;">長期價格 MA 周期 (天)</label>
+                    <input type="number" id="longMA_OBV" value="21" min="1">
+                    <label for="obvMA_Period2" style="margin-top: 10px;">OBV 移動平均周期 (天)</label>
+                    <input type="number" id="obvMA_Period2" value="14" min="1">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label for="startDateOBV">📅 開始日期</label>
+                        <input type="text" id="startDateOBV" placeholder="YYYY/MM/DD" title="輸入開始日期，格式：2024/01/01">
+                    </div>
+                    <div class="form-group">
+                        <label for="endDateOBV">📅 結束日期</label>
+                        <input type="text" id="endDateOBV" placeholder="YYYY/MM/DD" title="輸入結束日期，格式：2024/12/31">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="initialCashOBV">初始資金 ($)</label>
+                    <input type="number" id="initialCashOBV" value="10000" min="1">
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center;">
+                        <input type="checkbox" id="useCommissionOBV" style="width: auto; margin: 0;">
+                        <span style="margin-left: 2px;">使用手續費計算 (0.08%)</span>
+                    </label>
+                </div>
+
+                <button class="btn" onclick="runOBV_MA_Analysis()">
+                    🚀 開始 OBV + MA 回測分析
+                </button>
+
+                <div class="error" id="errorOBV"></div>
+                <div class="loading" id="loadingOBV">
+                    <div class="spinner"></div>
+                    <p>正在分析 OBV 與 MA 策略...</p>
+                </div>
+                <div class="results" id="resultsOBV"></div>
+            </div>
+
             <!-- 年份穩定性分析模式 (新增) -->
             <div id="yearly" class="tab-content">
                 <h2>🌿 年份穩定性分析 - 尋找溫和參數</h2>
@@ -747,6 +845,8 @@
     <script src="market_diagnosis.js"></script>
     <script src="walkforward_analysis.js"></script>
     <script src="volume_confirmation_strategy.js"></script>
+    <script src="obv_ma_strategy.js"></script>
+    <script src="obv_ma_integration.js"></script>
     <script src="script.js"></script>
     <script src="kd_script.js"></script>
 </body>

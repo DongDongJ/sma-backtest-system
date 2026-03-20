@@ -19,6 +19,8 @@
  * @param {Number} initialCash - 初始資金
  * @param {Boolean} useCommission - 是否計算手續費
  * @param {Number} outputStartIdx - 實際交易開始索引（跳過計算均線用的前置數據）
+ * @param {Number} volumeMultiplier - 放量倍數條件 (預設 1.2)
+ * @param {Number} volumeMAWindow - 平均成交量計算周期 (預設 20 天)
  * @returns {Object} 回測結果
  */
 function backtestWithVolumeConfirmation(
@@ -26,14 +28,16 @@ function backtestWithVolumeConfirmation(
     shortMA_window, longMA_window,
     initialCash = 10000,
     useCommission = false,
-    outputStartIdx = 0
+    outputStartIdx = 0,
+    volumeMultiplier = 1.2,
+    volumeMAWindow = 20
 ) {
     // 計算均線
     const shortMA = computeMA(closes, shortMA_window, 'SMA');
     const longMA = computeMA(closes, longMA_window, 'SMA');
     
-    // 計算20日平均成交量
-    const avgVolume = calculateAverageVolumeArray(volumes, 20);
+    // 計算平均成交量（可自訂天數）
+    const avgVolume = calculateAverageVolumeArray(volumes, volumeMAWindow);
 
     let cash = initialCash;
     let shares = 0;
@@ -84,7 +88,7 @@ function backtestWithVolumeConfirmation(
 
         // 計算成交量比例
         const volumeRatio = currAvgVolume > 0 ? currVolume / currAvgVolume : 1;
-        const isVolumeConfirmed = volumeRatio >= 1.2; // 放量條件：成交量 > 1.2倍平均
+        const isVolumeConfirmed = volumeRatio >= volumeMultiplier; // 放量條件：成交量 > volumeMultiplier倍平均
 
         // 黃金交叉
         if (isGoldenCross && shares === 0 && i < endIdx) {
@@ -209,6 +213,8 @@ function backtestWithVolumeConfirmation(
         longMA: longMA_window,
         shortMAType: 'SMA',
         longMAType: 'SMA',
+        volumeMultiplier: volumeMultiplier,
+        volumeMAWindow: volumeMAWindow,
         finalValue: finalValue,
         returnRate: returnRate,
         tradeCount: tradeCount,
@@ -225,9 +231,9 @@ function backtestWithVolumeConfirmation(
 }
 
 /**
- * 計算平均成交量陣列 (20日)
+ * 計算平均成交量陣列 (50日)
  */
-function calculateAverageVolumeArray(volumes, period = 20) {
+function calculateAverageVolumeArray(volumes, period = 50) {
     const result = new Array(volumes.length).fill(0);
     
     let sum = 0;

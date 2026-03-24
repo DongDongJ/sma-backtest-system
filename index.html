@@ -131,7 +131,22 @@
 
                 <button class="btn" onclick="runOptimization()">開始優化</button>
 
-                <!-- 📊 方案 A：成交量確認制 (最安全) -->
+                <!-- � 方案 B：遍歷所有参數組合 -->
+                <div style="margin-top: 20px; padding: 15px; background: #fce4ec; border-left: 4px solid #e91e63; border-radius: 5px;">
+                    <h3 style="color: #c2185b; margin-top: 0;">🔥 方案 B：終極優化 (遍歷所有參數)</h3>
+                    <div class="info-box" style="background: #f8bbd0; border-left: 3px solid #e91e63;">
+                        <strong>✅ 核心特徵：</strong>同時遍歷所有短MA + 長MA + 放量倍數 + 成交量周期組合
+                        <br>✅ <strong>優勢：</strong>找到全球最優參數組合，無遺漏
+                        <br>⚠️ <strong>注意：</strong>測試量大 (可能數十萬組合)，耗時較長 (5分鐘~1小時)
+                    </div>
+
+                    <button class="btn" onclick="runSchemeB()" 
+                            style="background: linear-gradient(135deg, #e91e63 0%, #c2185b 100%); width: 100%; margin-top: 10px;">
+                        🔥 執行方案 B：遍歷所有參數
+                    </button>
+                </div>
+
+                <!-- �📊 方案 A：成交量確認制 (最安全) -->
                 <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-left: 4px solid #ff9800; border-radius: 5px;">
                     <h3 style="color: #e65100; margin-top: 0;">📊 方案 A：成交量確認制 (最安全)</h3>
                     <div class="info-box" style="background: #ffe0b2; border-left: 3px solid #ff9800;">
@@ -536,17 +551,17 @@
                     <div class="form-group">
                         <label for="shortMARange">短期MA參數範圍</label>
                         <div style="display: flex; gap: 10px;">
-                            <input type="number" id="shortMAMin" value="5" min="1" style="flex: 1;" placeholder="最小">
+                            <input type="number" id="shortMAMin" value="1" min="1" style="flex: 1;" placeholder="最小">
                             <span>-</span>
-                            <input type="number" id="shortMAMax" value="30" min="1" style="flex: 1;" placeholder="最大">
+                            <input type="number" id="shortMAMax" value="256" min="1" style="flex: 1;" placeholder="最大">
                         </div>
                     </div>
                     <div class="form-group">
                         <label for="longMARange">長期MA參數範圍</label>
                         <div style="display: flex; gap: 10px;">
-                            <input type="number" id="longMAMin" value="20" min="1" style="flex: 1;" placeholder="最小">
+                            <input type="number" id="longMAMin" value="1" min="1" style="flex: 1;" placeholder="最小">
                             <span>-</span>
-                            <input type="number" id="longMAMax" value="200" min="1" style="flex: 1;" placeholder="最大">
+                            <input type="number" id="longMAMax" value="256" min="1" style="flex: 1;" placeholder="最大">
                         </div>
                     </div>
                 </div>
@@ -847,6 +862,8 @@
     <script src="volume_confirmation_strategy.js"></script>
     <script src="obv_ma_strategy.js"></script>
     <script src="obv_ma_integration.js"></script>
+    <script src="scheme_b_optimizer.js"></script>
+    <script src="scheme_b_integration.js"></script>
     <script src="script.js"></script>
     <script src="kd_script.js"></script>
 </body>

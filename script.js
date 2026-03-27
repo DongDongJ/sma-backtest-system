@@ -694,6 +694,107 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
     };
 }
 
+/**
+ * 計算策略評估指標
+ * Profit Factor、勝率、平均報酬、Sharpe Ratio 等
+ */
+function calculateStrategyMetrics(backTestResult, initialCash) {
+    const trades = backTestResult.trades || [];
+    
+    if (trades.length === 0) {
+        return {
+            profitFactor: 0,
+            winRate: 0,
+            averageReturn: 0,
+            sharpeRatio: 0,
+            winCount: 0,
+            lossCount: 0,
+            totalGain: 0,
+            totalLoss: 0,
+            averageGain: 0,
+            averageLoss: 0
+        };
+    }
+    
+    // 改進的配對買賣交易計算單筆收益
+    // 邏輯：每個「買入」配對後面第一個「賣出」或「期末賣出」
+    let winCount = 0;
+    let lossCount = 0;
+    let totalGain = 0;
+    let totalLoss = 0;
+    const returns = [];
+    
+    let i = 0;
+    while (i < trades.length) {
+        // 找下一個買入
+        while (i < trades.length && trades[i].action !== '買入') {
+            i++;
+        }
+        
+        if (i >= trades.length) break;  // 沒有更多買入
+        
+        const buyIdx = i;
+        i++;
+        
+        // 找對應的賣出或期末賣出
+        while (i < trades.length && trades[i].action !== '賣出' && trades[i].action !== '期末賣出') {
+            i++;
+        }
+        
+        if (i >= trades.length) break;  // 沒有對應的賣出
+        
+        // 配對買賣
+        const buyPrice = trades[buyIdx].price;
+        const sellPrice = trades[i].price;
+        const shares = trades[buyIdx].shares;
+        const singleReturn = (sellPrice - buyPrice) / buyPrice * 100;
+        const buyCommission = trades[buyIdx].buyCommission || 0;
+        const sellCommission = trades[i].sellCommission || 0;
+        const profit = (sellPrice - buyPrice) * shares - (buyCommission + sellCommission);
+        
+        returns.push(singleReturn);
+        
+        if (profit > 0) {
+            winCount++;
+            totalGain += profit;
+        } else if (profit < 0) {
+            lossCount++;
+            totalLoss += Math.abs(profit);
+        }
+        
+        i++;  // 移動到下一筆交易
+    }
+    
+    const totalTrades = winCount + lossCount;
+    const winRate = totalTrades > 0 ? (winCount / totalTrades) * 100 : 0;
+    const profitFactor = totalLoss > 0 ? totalGain / totalLoss : (totalGain > 0 ? 999 : 0);
+    const averageReturn = totalTrades > 0 ? returns.reduce((a, b) => a + b, 0) / totalTrades : 0;
+    const averageGain = winCount > 0 ? totalGain / winCount : 0;
+    const averageLoss = lossCount > 0 ? totalLoss / lossCount : 0;
+    
+    // 計算 Sharpe Ratio（簡化版，假設無風險利率為0）
+    let variance = 0;
+    if (returns.length > 1) {
+        const mean = averageReturn;
+        variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / returns.length;
+    }
+    const stdDev = Math.sqrt(variance);
+    const sharpeRatio = stdDev > 0 ? (averageReturn / stdDev) * Math.sqrt(252) : 0;
+    
+    return {
+        profitFactor: profitFactor,
+        winRate: winRate,
+        averageReturn: averageReturn,
+        sharpeRatio: sharpeRatio,
+        winCount: winCount,
+        lossCount: lossCount,
+        totalGain: totalGain,
+        totalLoss: totalLoss,
+        averageGain: averageGain,
+        averageLoss: averageLoss
+    };
+}
+
 function showError(mode, message) {
     const errorDiv = document.getElementById(`error${mode}`);
     errorDiv.textContent = '⚠ ' + message;
@@ -1104,7 +1205,137 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
     resultsDiv.innerHTML = html;
     resultsDiv.classList.add('show');
     
-    console.log('✅ 結果已顯示');
+    // 顯示匯出按鈕
+    const exportButtonsContainer = document.getElementById('exportButtonsContainer');
+    if (exportButtonsContainer) {
+        exportButtonsContainer.style.display = 'block';
+    }
+    
+    // 保存結果到全局變量供CSV匯出使用
+    window.allOptimizationResults = results;
+    
+    // 計算並顯示統計對比
+    updateStrategyComparison(results);
+    
+    console.log('✅ 結果已顯示，已啟用匯出按鈕');
+}
+
+/**
+ * 計算並顯示MA vs Volume 策略對比統計
+ */
+function updateStrategyComparison(results) {
+    if (!results || results.length === 0) {
+        return;
+    }
+    
+    // 檢查是否有Volume策略數據
+    const hasVolume = results.some(r => r.volumeMultiplier !== undefined);
+    const hasMA = results.some(r => r.volumeMultiplier === undefined);
+    
+    // 保存數據到全局變量用於後續對比
+    if (hasVolume && !hasMA) {
+        // 純Volume數據
+        window.volumeResults = results;
+        const stats = calculateReturnStats(results);
+        displayVolumeStats(stats);
+        console.log('✅ 已更新Volume統計，利潤因子:', stats.profitFactor.toFixed(2));
+    } else if (hasMA && !hasVolume) {
+        // 純MA數據
+        window.maResults = results;
+        const stats = calculateReturnStats(results);
+        displayMAStats(stats);
+        console.log('✅ 已更新MA統計，利潤因子:', stats.profitFactor.toFixed(2));
+    } else if (hasMA && hasVolume) {
+        // 混合數據（不應該出現）
+        console.log('⚠️ 混合數據類型，分別統計');
+        const maStats = calculateReturnStats(results.filter(r => !r.volumeMultiplier));
+        const volStats = calculateReturnStats(results.filter(r => r.volumeMultiplier));
+        displayMAStats(maStats);
+        displayVolumeStats(volStats);
+    }
+    
+    // 如果同時有MA和Volume結果，顯示對比表格
+    if (window.maResults && window.volumeResults) {
+        document.getElementById('statsComparisonContainer').style.display = 'block';
+        console.log('✅ 已顯示對比表格');
+    }
+}
+
+/**
+ * 計算報酬率統計（最大、最小、平均、標準差、利潤因子）
+ * ✅ 只計算有交易(tradeCount > 0)的參數，排除完全沒做交易的參數
+ */
+function calculateReturnStats(results) {
+    if (!results || results.length === 0) {
+        return { max: 0, min: 0, avg: 0, stdDev: 0, profitFactor: 0 };
+    }
+    
+    // 🔴 新增：篩選出有交易的參數
+    const tradedResults = results.filter(r => r.tradeCount && r.tradeCount > 0);
+    
+    if (tradedResults.length === 0) {
+        console.warn('⚠️ 警告：沒有任何參數做過交易');
+        return { max: 0, min: 0, avg: 0, stdDev: 0, profitFactor: 0 };
+    }
+    
+    // 只計算有交易的參數的報酬率
+    const returns = tradedResults.map(r => r.returnRate || 0);
+    const max = Math.max(...returns);
+    const min = Math.min(...returns);
+    const avg = returns.reduce((a, b) => a + b, 0) / returns.length;
+    
+    // 計算標準差
+    const variance = returns.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / returns.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // 計算平均利潤因子 (也只計算有交易的)
+    let totalProfitFactors = 0;
+    let validCount = 0;
+    
+    tradedResults.forEach(r => {
+        // 先計算該結果的指標（如果還沒計算過）
+        if (!r.profitFactor || r.profitFactor === undefined) {
+            const initialCash = parseFloat(document.getElementById('initialCash2').value) || 10000;
+            const metrics = calculateStrategyMetrics(r, initialCash);
+            r.profitFactor = metrics.profitFactor;
+        }
+        
+        if (r.profitFactor && r.profitFactor > 0 && r.profitFactor !== Infinity) {
+            totalProfitFactors += r.profitFactor;
+            validCount++;
+        }
+    });
+    
+    const profitFactor = validCount > 0 ? totalProfitFactors / validCount : 0;
+    
+    console.log(`✅ 統計數據：總樣本數=${results.length}, 有交易樣本=${tradedResults.length}, 有效利潤因子數=${validCount}, 平均利潤因子=${profitFactor.toFixed(2)}`);
+    
+    return { max, min, avg, stdDev, profitFactor };
+}
+
+/**
+ * 顯示MA統計數據
+ */
+function displayMAStats(stats) {
+    document.getElementById('maMaxReturn').textContent = stats.max.toFixed(2) + '%';
+    document.getElementById('maMinReturn').textContent = stats.min.toFixed(2) + '%';
+    document.getElementById('maAvgReturn').textContent = stats.avg.toFixed(2) + '%';
+    document.getElementById('maStdDev').textContent = stats.stdDev.toFixed(2) + '%';
+    document.getElementById('maProfitFactor').textContent = stats.profitFactor.toFixed(2);
+    
+    // 顯示對比容器
+    document.getElementById('statsComparisonContainer').style.display = 'block';
+}
+
+/**
+ * 顯示Volume統計數據
+ */
+function displayVolumeStats(stats) {
+    document.getElementById('volMaxReturn').textContent = stats.max.toFixed(2) + '%';
+    document.getElementById('volMinReturn').textContent = stats.min.toFixed(2) + '%';
+    document.getElementById('volAvgReturn').textContent = stats.avg.toFixed(2) + '%';
+    document.getElementById('volStdDev').textContent = stats.stdDev.toFixed(2) + '%';
+    document.getElementById('volProfitFactor').textContent = stats.profitFactor.toFixed(2);
 }
 
 function showDetailedResult(shortMADays, longMADays, maType = 'SMA') {
@@ -3771,4 +4002,158 @@ function classifyMarketType(features) {
     
     return type;
 }
+
+/**
+ * 下載排名CSV檔案 - 傳統MA策略
+ * 按 (短線, 長線) 參數組合順序排列：(1,1), (1,2)... (256,256)
+ * 包含完整策略評估指標
+ */
+function downloadRankingCSV() {
+    if (!allOptimizationResults || allOptimizationResults.length === 0) {
+        alert('❌ 請先執行優化才能匯出排名');
+        return;
+    }
+    
+    const stockSymbol = document.getElementById('stockSelect2').value;
+    const startDate = document.getElementById('startDate2').value;
+    const endDate = document.getElementById('endDate2').value;
+    const initialCash = parseFloat(document.getElementById('initialCash2').value);
+    
+    // 按 (短線, 長線) 參數組合順序排序
+    const sortedResults = [...allOptimizationResults].sort((a, b) => {
+        if (a.shortMA !== b.shortMA) {
+            return a.shortMA - b.shortMA;
+        }
+        return a.longMA - b.longMA;
+    });
+    
+    // 計算每個結果的指標
+    const resultsWithMetrics = sortedResults.map(result => {
+        const metrics = calculateStrategyMetrics(result, initialCash);
+        return { ...result, ...metrics };
+    });
+    
+    // 準備CSV內容 - 使用 Blob 以正確支援中文編碼
+    let csvContent = '排名,短期MA,長期MA,均線類型,交易次數,獲利交易,虧損交易,勝率(%),利潤因子,平均單筆報酬(%),平均獲利,平均虧損,夏普比率,總獲利,總虧損,最終資產,報酬率(%),初始資金\n';
+    
+    // 添加排名數據
+    resultsWithMetrics.forEach((result, index) => {
+        const rank = index + 1;
+        const row = [
+            rank,
+            result.shortMA,
+            result.longMA,
+            result.shortMAType || 'SMA',
+            result.tradeCount,
+            result.winCount || 0,
+            result.lossCount || 0,
+            (result.winRate || 0).toFixed(2),
+            (result.profitFactor || 0).toFixed(2),
+            (result.averageReturn || 0).toFixed(2),
+            (result.averageGain || 0).toFixed(2),
+            (result.averageLoss || 0).toFixed(2),
+            (result.sharpeRatio || 0).toFixed(2),
+            (result.totalGain || 0).toFixed(2),
+            (result.totalLoss || 0).toFixed(2),
+            result.finalValue.toFixed(2),
+            result.returnRate.toFixed(2),
+            initialCash.toFixed(2)
+        ];
+        csvContent += row.join(',') + '\n';
+    });
+    
+    // 使用 Blob 創建檔案（支援UTF-8編碼）
+    const BOM = '\uFEFF'; // UTF-8 BOM
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${stockSymbol}_排名_(${startDate}至${endDate}).csv`);
+    document.body.appendChild(link);
+    
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    console.log('✅ 已匯出 ' + resultsWithMetrics.length + ' 個參數組合的排名CSV (傳統MA)，包含完整評估指標');
+}
+
+/**
+ * 下載排名CSV檔案 - 成交量確認制策略
+ * 按 (短線, 長線) 參數組合順序排列：(1,1), (1,2)... (256,256)
+ */
+function downloadVolumeConfirmationRankingCSV() {
+    if (!allOptimizationResults || allOptimizationResults.length === 0) {
+        alert('❌ 請先執行成交量確認制優化才能匯出排名');
+        return;
+    }
+    
+    const stockSymbol = document.getElementById('stockSelect2').value;
+    const startDate = document.getElementById('startDate2').value;
+    const endDate = document.getElementById('endDate2').value;
+    const initialCash = parseFloat(document.getElementById('initialCash2').value);
+    
+    // 按 (短線, 長線) 參數組合順序排序
+    const sortedResults = [...allOptimizationResults].sort((a, b) => {
+        if (a.shortMA !== b.shortMA) {
+            return a.shortMA - b.shortMA;
+        }
+        return a.longMA - b.longMA;
+    });
+    
+    // 計算每個結果的指標
+    const resultsWithMetrics = sortedResults.map(result => {
+        const metrics = calculateStrategyMetrics(result, initialCash);
+        return { ...result, ...metrics };
+    });
+    
+    // 準備CSV內容 - 使用 Blob 以正確支援中文編碼
+    let csvContent = '排名,短期MA,長期MA,放量倍數,成交量周期,交易次數,獲利交易,虧損交易,勝率(%),利潤因子,平均單筆報酬(%),平均獲利,平均虧損,夏普比率,總獲利,總虧損,放量買入,放量賣出,跳過信號,最終資產,報酬率(%),初始資金\n';
+    
+    // 添加排名數據
+    resultsWithMetrics.forEach((result, index) => {
+        const rank = index + 1;
+        const row = [
+            rank,
+            result.shortMA,
+            result.longMA,
+            (result.volumeMultiplier || 1.2).toFixed(2),
+            result.volumeMAWindow || 20,
+            result.tradeCount,
+            result.winCount || 0,
+            result.lossCount || 0,
+            (result.winRate || 0).toFixed(2),
+            (result.profitFactor || 0).toFixed(2),
+            (result.averageReturn || 0).toFixed(2),
+            (result.averageGain || 0).toFixed(2),
+            (result.averageLoss || 0).toFixed(2),
+            (result.sharpeRatio || 0).toFixed(2),
+            (result.totalGain || 0).toFixed(2),
+            (result.totalLoss || 0).toFixed(2),
+            result.volumeStats?.confirmedBuys || 0,
+            result.volumeStats?.confirmedSells || 0,
+            result.volumeStats?.skippedSignals || 0,
+            result.finalValue.toFixed(2),
+            result.returnRate.toFixed(2),
+            initialCash.toFixed(2)
+        ];
+        csvContent += row.join(',') + '\n';
+    });
+    
+    // 使用 Blob 創建檔案（支援UTF-8編碼）
+    const BOM = '\uFEFF'; // UTF-8 BOM
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${stockSymbol}_排名_成交量確認制_(${startDate}至${endDate}).csv`);
+    document.body.appendChild(link);
+    
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    console.log('✅ 已匯出 ' + resultsWithMetrics.length + ' 個參數組合的排名CSV (成交量確認制)，包含完整評估指標');
+}
+
 console.log('✅ script.js 載入完成, handleFileUpload 類型:', typeof handleFileUpload);

@@ -200,6 +200,57 @@
                     <div class="spinner"></div>
                     <p>正在測試所有參數組合...</p>
                 </div>
+                
+                <!-- 統計對比表格區域 -->
+                <div id="statsComparisonContainer" style="display: none; margin: 20px 0; padding: 20px; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 8px; border-left: 4px solid #667eea;">
+                    <h4 style="margin-top: 0; margin-bottom: 15px; color: #333;">📊 策略效能對比</h4>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden;">
+                            <thead>
+                                <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                    <th style="padding: 12px; text-align: left; border: 1px solid #ddd;"><strong>方法</strong></th>
+                                    <th style="padding: 12px; text-align: center; border: 1px solid #ddd;"><strong>最佳報酬率(%)</strong></th>
+                                    <th style="padding: 12px; text-align: center; border: 1px solid #ddd;"><strong>最差報酬率(%)</strong></th>
+                                    <th style="padding: 12px; text-align: center; border: 1px solid #ddd;"><strong>平均報酬率(%)</strong></th>
+                                    <th style="padding: 12px; text-align: center; border: 1px solid #ddd;"><strong>標準差(%)</strong></th>
+                                    <th style="padding: 12px; text-align: center; border: 1px solid #ddd;"><strong>利潤因子</strong></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr style="background: #f9f9f9;">
+                                    <td style="padding: 12px; border: 1px solid #ddd; font-weight: bold;">只使用MA</td>
+                                    <td style="padding: 12px; border: 1px solid #ddd; text-align: center; color: #4caf50;" id="maMaxReturn">-</td>
+                                    <td style="padding: 12px; border: 1px solid #ddd; text-align: center; color: #f44336;" id="maMinReturn">-</td>
+                                    <td style="padding: 12px; border: 1px solid #ddd; text-align: center; color: #2196f3;" id="maAvgReturn">-</td>
+                                    <td style="padding: 12px; border: 1px solid #ddd; text-align: center; color: #ff9800;" id="maStdDev">-</td>
+                                    <td style="padding: 12px; border: 1px solid #ddd; text-align: center; color: #9c27b0;" id="maProfitFactor">-</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 12px; border: 1px solid #ddd; font-weight: bold;">使用MA搭配成交量</td>
+                                    <td style="padding: 12px; border: 1px solid #ddd; text-align: center; color: #4caf50;" id="volMaxReturn">-</td>
+                                    <td style="padding: 12px; border: 1px solid #ddd; text-align: center; color: #f44336;" id="volMinReturn">-</td>
+                                    <td style="padding: 12px; border: 1px solid #ddd; text-align: center; color: #2196f3;" id="volAvgReturn">-</td>
+                                    <td style="padding: 12px; border: 1px solid #ddd; text-align: center; color: #ff9800;" id="volStdDev">-</td>
+                                    <td style="padding: 12px; border: 1px solid #ddd; text-align: center; color: #9c27b0;" id="volProfitFactor">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- 匯出按鈕區域 -->
+                <div id="exportButtonsContainer" style="display: none; margin: 20px 0; padding: 15px; background: #f0f8ff; border-radius: 8px; border-left: 4px solid #2196f3;">
+                    <h4 style="margin-top: 0; margin-bottom: 15px;">📥 匯出排名</h4>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button class="btn" onclick="downloadRankingCSV()" style="background: linear-gradient(135deg, #2196f3 0%, #1565c0 100%); flex: 1; min-width: 150px;">
+                            📊 匯出傳統MA排名 CSV
+                        </button>
+                        <button class="btn" onclick="downloadVolumeConfirmationRankingCSV()" style="background: linear-gradient(135deg, #ff9800 0%, #e65100 100%); flex: 1; min-width: 150px;">
+                            💧 匯出成交量確認制排名 CSV
+                        </button>
+                    </div>
+                </div>
+                
                 <div class="results" id="results2"></div>
             </div>
 
@@ -489,6 +540,21 @@
                         <div class="stat-box">
                             <div class="stat-label">獲利組合數</div>
                             <div class="stat-value" id="profitableCombinations">-</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row" style="margin-top: 15px;">
+                        <div class="stat-box" style="background: #c8e6c9; border-left: 4px solid #4caf50;">
+                            <div class="stat-label" style="color: #2e7d32;">💰 獲利組合平均資產</div>
+                            <div class="stat-value" id="profitableAverageHeatmap" style="color: #2e7d32;">-</div>
+                        </div>
+                        <div class="stat-box" style="background: #ffcccc; border-left: 4px solid #f44336;">
+                            <div class="stat-label" style="color: #c62828;">🔴 賠錢組合數</div>
+                            <div class="stat-value" id="lossCount" style="color: #c62828;">-</div>
+                        </div>
+                        <div class="stat-box" style="background: #ffcccc; border-left: 4px solid #f44336;">
+                            <div class="stat-label" style="color: #c62828;">賠錢組合平均資產</div>
+                            <div class="stat-value" id="lossAverageHeatmap" style="color: #c62828;">-</div>
                         </div>
                     </div>
                 </div>

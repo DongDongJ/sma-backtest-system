@@ -89,22 +89,44 @@ function updateHeatmapStats(results, initialCash) {
     let maxProfit = -Infinity;
     let minLoss = Infinity;
     let profitableCount = 0;
+    let profitableTotalValue = 0;
+    let lossCount = 0;
+    let lossTotalValue = 0;
 
     results.forEach(r => {
         const profit = r.finalValue - initialCash;
         maxProfit = Math.max(maxProfit, profit);
-        if (profit < 0) {
-            minLoss = Math.min(minLoss, profit);
-        }
+        
         if (profit > 0) {
+            // 獲利的組合
             profitableCount++;
+            profitableTotalValue += r.finalValue;
+        } else if (profit < 0) {
+            // 賠錢的組合
+            lossCount++;
+            lossTotalValue += r.finalValue;
+            minLoss = Math.min(minLoss, profit);
         }
     });
 
+    // 計算平均值
+    const profitableAverage = profitableCount > 0 ? profitableTotalValue / profitableCount : 0;
+    const lossAverage = lossCount > 0 ? lossTotalValue / lossCount : 0;
+
+    // 更新統計信息顯示
     document.getElementById('maxProfitHeatmap').textContent = `$${maxProfit.toFixed(2)}`;
     document.getElementById('minLossHeatmap').textContent = minLoss === Infinity ? '-' : `$${minLoss.toFixed(2)}`;
     document.getElementById('totalCombinations').textContent = results.length;
     document.getElementById('profitableCombinations').textContent = `${profitableCount} (${(profitableCount/results.length*100).toFixed(1)}%)`;
+    
+    // 新增統計信息
+    document.getElementById('profitableAverageHeatmap').textContent = profitableCount > 0 ? `$${profitableAverage.toFixed(2)}` : '-';
+    document.getElementById('lossCount').textContent = `${lossCount} (${lossCount > 0 ? (lossCount/results.length*100).toFixed(1) : '0'}%)`;
+    document.getElementById('lossAverageHeatmap').textContent = lossCount > 0 ? `$${lossAverage.toFixed(2)}` : '-';
+    
+    console.log('✅ 熱力圖統計更新完成:');
+    console.log(`   獲利組合: ${profitableCount} 個，平均資產: $${profitableAverage.toFixed(2)}`);
+    console.log(`   賠錢組合: ${lossCount} 個，平均資產: $${lossAverage.toFixed(2)}`);
 }
 
 // ========== Plotly.js 版本 - 使用現代網頁標準 ==========

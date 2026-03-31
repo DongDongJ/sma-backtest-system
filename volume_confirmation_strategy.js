@@ -105,6 +105,9 @@ function backtestWithVolumeConfirmation(
                 cash -= buyCommissionRecord;
                 tradeCount++;
 
+                // ✅ 計算總資產：現金 + 股票市值
+                const totalAssetAfterBuy = cash + (shares * currPrice);
+
                 trades.push({
                     date: dates[i],
                     action: '買入',
@@ -115,7 +118,8 @@ function backtestWithVolumeConfirmation(
                     volumeStatus: '✅ 放量確認',
                     buyCommission: buyCommissionRecord,
                     sellCommission: 0,
-                    cashAfter: cash
+                    cashAfter: cash,
+                    totalAsset: totalAssetAfterBuy  // ✅ 新增：總資產
                 });
             } else {
                 // ❌ 無量黃金交叉 - 跳過
@@ -131,7 +135,8 @@ function backtestWithVolumeConfirmation(
                     reason: '成交量不足 1.2 倍平均',
                     buyCommission: 0,
                     sellCommission: 0,
-                    cashAfter: cash
+                    cashAfter: cash,
+                    totalAsset: cash  // ✅ 無交易時，總資產 = 現金
                 });
             }
         }
@@ -157,7 +162,8 @@ function backtestWithVolumeConfirmation(
                     volumeStatus: '✅ 放量確認',
                     buyCommission: 0,
                     sellCommission: sellCommissionRecord,
-                    cashAfter: cash
+                    cashAfter: cash,
+                    totalAsset: cash  // ✅ 賣出完，总资产 = 现金
                 });
 
                 shares = 0;
@@ -166,6 +172,10 @@ function backtestWithVolumeConfirmation(
             } else {
                 // ❌ 無量死亡交叉 - 繼續持股
                 skippedSignals++;
+                
+                // ✅ 計算持股狀態下的總資產
+                const totalAssetHolding = cash + (shares * currPrice);
+                
                 trades.push({
                     date: dates[i],
                     action: '持股觀望',
@@ -177,7 +187,8 @@ function backtestWithVolumeConfirmation(
                     reason: '成交量不足 1.2 倍平均，等待放量賣出',
                     buyCommission: 0,
                     sellCommission: 0,
-                    cashAfter: cash
+                    cashAfter: cash,
+                    totalAsset: totalAssetHolding  // ✅ 新增：持股時的總資產
                 });
             }
         }
@@ -199,6 +210,7 @@ function backtestWithVolumeConfirmation(
             buyCommission: 0,
             sellCommission: sellCommissionRecord,
             cashAfter: finalValue,
+            totalAsset: finalValue,  // ✅ 新增：期末資產
             volume: volumes[endIdx] || 0,
             volumeRatio: '終',
             volumeStatus: '期末平倉'

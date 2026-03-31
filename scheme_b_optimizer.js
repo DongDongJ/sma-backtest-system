@@ -76,8 +76,10 @@ function optimizeSchemeB(
             let winCount = 0, lossCount = 0;
             let totalWin = 0, totalLoss = 0;
             let maxDrawdown = 0;
-            let peakCash = initialCash;
-
+            
+            // ✅ 第一步：收集所有資金狀態點（使用總資產而不是純現金）
+            const cashStates = [initialCash];
+            
             if (result.trades && result.trades.length > 0) {
                 let lastBuyPrice = null;
                 let lastBuyCash = initialCash;
@@ -100,17 +102,101 @@ function optimizeSchemeB(
                         }
                     }
 
-                    if (trade.cashAfter !== undefined) {
-                        if (trade.cashAfter > peakCash) peakCash = trade.cashAfter;
-                        const drawdown = (peakCash - trade.cashAfter) / peakCash;
-                        maxDrawdown = Math.max(maxDrawdown, drawdown);
+                    // ✅ 使用 totalAsset (若有) 或降級到 cashAfter
+                    const assetValue = (trade.totalAsset !== undefined) ? trade.totalAsset : trade.cashAfter;
+                    if (assetValue !== undefined && assetValue >= 0) {
+                        cashStates.push(assetValue);
                     }
                 });
+
+                // ✅ 確保最終資金也被納入（最後一個 totalAsset）
+                if (result.finalValue !== undefined && result.finalValue >= 0) {
+                    cashStates.push(result.finalValue);
+                }
             }
+
+            // ✅ 第二步：計算最大回撤（基於所有資金狀態點）
+            let peakCash = initialCash;
+            let debugInfo = [];
+            
+            for (let i = 0; i < cashStates.length; i++) {
+                let cash = cashStates[i];
+                peakCash = Math.max(peakCash, cash);
+                if (peakCash > 0) {
+                    const drawdown = (peakCash - cash) / peakCash;
+                    maxDrawdown = Math.max(maxDrawdown, drawdown);
+                    
+                    // 記錄所有點用於debug
+                    debugInfo.push({
+                        idx: i,
+                        cash: cash.toFixed(2),
+                        peak: peakCash.toFixed(2),
+                        dd: (drawdown * 100).toFixed(2)
+                    });
+                }
+            }
+            
+            // ✅ Debug：當測試組合索引 < 3 時，打印完整信息
+            if (idx < 3) {
+                console.log(`🔍 [${idx}] MA${params.shortMA}/${params.longMA} 1.${params.volumeMultiplier.toFixed(1).split('.')[1]}x ${params.volumeMAWindow}天`);
+                console.log(`   初始:$${initialCash} → 最終:$${result.finalValue.toFixed(0)} (報酬${(result.returnRate||0).toFixed(2)}%)`);
+                console.log(`   最大回撤: ${(maxDrawdown*100).toFixed(2)}%`);
+                console.log(`   資金路徑(共${cashStates.length}個點):`, debugInfo.map(d => `[${d.idx}]:$${d.cash}(DD${d.dd}%)`).join(' → '));
+                if (cashStates.some(c => c === 0 || c < 1)) {
+                    console.warn(`   ⚠️ 異常：有資金點接近0!`, cashStates);
+                }
+            }
+            
+            // ✅ 防護：回撤不超過100%
+            maxDrawdown = Math.min(maxDrawdown, 1.0);
 
             const totalTrades = winCount + lossCount;
             const winRate = totalTrades > 0 ? (winCount / totalTrades * 100) : 0;
-            const profitFactor = totalLoss > 0 ? totalWin / totalLoss : (totalWin > 0 ? 999 : 0);
+            
+            // ✅ 改進：使用實際金額計算獲利係數
+            // 方式：每筆交易對在買入時投入的金額，與最終的獲利/虧損金額比較
+            let realTotalWinAmount = 0;
+            let realTotalLossAmount = 0;
+            
+            if (result.trades && result.trades.length > 0) {
+                let lastBuyPrice = null;
+                let lastBuyAmount = 0;  // 買入時投入的金額
+                
+                result.trades.forEach(trade => {
+                    if (trade.action === '買入') {
+                        lastBuyPrice = trade.price;
+                        lastBuyAmount = (trade.shares || 0) * trade.price;
+                    } else if (trade.action === '賣出' || trade.action === '期末賣出') {
+                        if (lastBuyPrice !== null && lastBuyAmount > 0) {
+                            const saleAmount = (trade.shares || 0) * trade.price;
+                            const profitAmount = saleAmount - lastBuyAmount;
+                            
+                            if (profitAmount > 0) {
+                                realTotalWinAmount += profitAmount;
+                            } else {
+                                realTotalLossAmount += Math.abs(profitAmount);
+                            }
+                            lastBuyPrice = null;
+                            lastBuyAmount = 0;
+                        }
+                    }
+                });
+            }
+            
+            // ✅ 統一獲利係數計算邏輯
+            // 獲利係數 = 實際獲利金額 / 實際虧損金額
+            // 若沒有虧損但有獲利，設定為 999（完美）
+            // 若沒有獲利也沒虧損，設定為 0
+            let profitFactor = 0;
+            if (realTotalLossAmount > 0) {
+                profitFactor = realTotalWinAmount / realTotalLossAmount;
+            } else if (realTotalWinAmount > 0) {
+                // 沒有虧損但有獲利 = 完美策略
+                profitFactor = 999;
+            }
+            
+            // 防護：避免無限大
+            profitFactor = Math.min(profitFactor, 999);
 
             const resultObj = {
                 rank: 0,
@@ -123,7 +209,8 @@ function optimizeSchemeB(
                 tradeCount: result.trades ? result.trades.length : 0,
                 winRate: winRate,
                 maxDrawdown: maxDrawdown * 100,
-                profitFactor: profitFactor
+                profitFactor: profitFactor,
+                trades: result.trades || []  // ✅ 新增：存儲交易明細
             };
 
             results.push(resultObj);
@@ -158,6 +245,43 @@ function optimizeSchemeB(
     });
     results.forEach((r, idx) => r.rank = idx + 1);
 
+    // ✅ 抽取排名第1的組合作為Debug信息
+    if (results.length > 0) {
+        const rank1 = results[0];
+        
+        // 重新計算這個組合的回撤路徑用於debug
+        let debugCashStates = [initialCash];
+        if (rank1.trades && rank1.trades.length > 0) {
+            rank1.trades.forEach(trade => {
+                // ✅ 使用 totalAsset (若有) 或降級到 cashAfter
+                const assetValue = (trade.totalAsset !== undefined) ? trade.totalAsset : trade.cashAfter;
+                if (assetValue !== undefined && assetValue >= 0) {
+                    debugCashStates.push(assetValue);
+                }
+            });
+        }
+        
+        let debugMaxDD = 0;
+        let debugPeak = initialCash;
+        for (let cash of debugCashStates) {
+            debugPeak = Math.max(debugPeak, cash);
+            if (debugPeak > 0) {
+                const dd = (debugPeak - cash) / debugPeak;
+                debugMaxDD = Math.max(debugMaxDD, dd);
+            }
+        }
+        
+        window.debugDrawdownInfo = {
+            params: `MA${rank1.shortMA}/${rank1.longMA} ${rank1.volumeMultiplier.toFixed(2)}x ${rank1.volumeMAWindow}天`,
+            initialCash: initialCash,
+            finalValue: rank1.finalCash,
+            tradesLength: rank1.trades?.length || 0,
+            cashStates: debugCashStates,
+            maxDrawdown: debugMaxDD,
+            returnRate: rank1.returnRate
+        };
+    }
+
     const endTime = performance.now();
     const duration = ((endTime - startTime) / 1000).toFixed(2);
 
@@ -179,8 +303,37 @@ function optimizeSchemeB(
 function generateSchemeBResultsHTML(result, topN = 50) {
     const results = result.allResults.slice(0, topN);
     const best = result.bestParameters;
+    
+    // ✅ 生成Debug面板（如果有調試信息）
+    let debugHTML = '';
+    if (window.debugDrawdownInfo) {
+        const d = window.debugDrawdownInfo;
+        debugHTML = `
+        <div style="margin-bottom: 15px; padding: 12px; background: #e8f5e9; border-left: 4px solid #4caf50; border-radius: 4px; font-size: 12px;">
+            <strong>🔧 最大回撤計算詳解 (第1組參數: ${d.params})</strong>
+            <div style="margin-top: 8px; font-family: monospace;">
+                初始資金: $${d.initialCash.toFixed(0)} | 最終資金: $${d.finalValue?.toFixed(0) || 'N/A'} | 報酬: ${d.returnRate?.toFixed(2) || 'N/A'}%<br>
+                交易筆數: ${d.tradesLength} | 資金狀態點數: ${d.cashStates?.length || 0}<br>
+                <strong>最大回撤: ${(d.maxDrawdown * 100).toFixed(2)}%</strong><br>
+                <details style="margin-top: 8px; cursor: pointer;">
+                    <summary style="font-weight: bold;">📊 資金路徑詳情 (共${d.cashStates?.length || 0}個點)</summary>
+                    <div style="margin-top: 8px; max-height: 200px; overflow-y: auto; background: white; padding: 8px; border-radius: 3px;">
+                        ${d.cashStates?.map((cash, i) => {
+                            let peak = d.initialCash;
+                            for (let j = 0; j <= i; j++) {
+                                peak = Math.max(peak, d.cashStates[j]);
+                            }
+                            const dd = (peak - cash) / peak;
+                            return `[${i}] $${cash.toFixed(0)} (高點: $${peak.toFixed(0)}, 回撤: ${(dd*100).toFixed(2)}%)<br>`;
+                        }).join('') || 'N/A'}
+                    </div>
+                </details>
+            </div>
+        </div>
+        `;
+    }
 
-    let html = `
+    let html = debugHTML + `
     <div style="margin-top: 20px; border: 3px solid #e91e63; border-radius: 8px; padding: 15px; background: #fce4ec;">
         <h3 style="color: #c2185b; margin-top: 0;">🔥 方案B結果 - 所有參數組合 Top ${topN}</h3>
         <p style="color: #666; margin-bottom: 15px;">

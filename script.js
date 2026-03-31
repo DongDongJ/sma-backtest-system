@@ -626,6 +626,9 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
             cash -= buyCommissionRecord;
             tradeCount++;
 
+            // ✅ 計算總資產：現金 + 股票市值
+            const totalAsset = cash + (shares * currPrice);
+
             trades.push({
                 date: dates[i],
                 action: '買入',
@@ -633,7 +636,8 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
                 shares: shares,
                 buyCommission: buyCommissionRecord,
                 sellCommission: 0,
-                cashAfter: cash
+                cashAfter: cash,
+                totalAsset: totalAsset  // ✅ 新增
             });
         }
         // 死亡交叉
@@ -644,6 +648,9 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
             
             totalCommission += buyCommissionRecord + sellCommissionRecord;
 
+            // ✅ 賣出後總資產 = 現金（沒有股票了）
+            const totalAsset = cash;
+
             trades.push({
                 date: dates[i],
                 action: '賣出',
@@ -651,7 +658,8 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
                 shares: shares,
                 buyCommission: 0,
                 sellCommission: sellCommissionRecord,
-                cashAfter: cash
+                cashAfter: cash,
+                totalAsset: totalAsset  // ✅ 新增
             });
 
             shares = 0;
@@ -679,6 +687,31 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
         tradeCount++;
     }
 
+    // ✅ 計算最大回撤
+    const cashStates = [initialCash];
+    if (trades && trades.length > 0) {
+        trades.forEach(trade => {
+            const assetValue = (trade.totalAsset !== undefined) ? trade.totalAsset : trade.cashAfter;
+            if (assetValue !== undefined && assetValue >= 0) {
+                cashStates.push(assetValue);
+            }
+        });
+        if (finalValue !== undefined && finalValue >= 0) {
+            cashStates.push(finalValue);
+        }
+    }
+    
+    let maxDrawdown = 0;
+    let peakCash = initialCash;
+    for (let cash of cashStates) {
+        peakCash = Math.max(peakCash, cash);
+        if (peakCash > 0) {
+            const drawdown = (peakCash - cash) / peakCash;
+            maxDrawdown = Math.max(maxDrawdown, drawdown);
+        }
+    }
+    maxDrawdown = Math.min(maxDrawdown, 1.0);  // 防護：不超過100%
+
     const returnRate = ((finalValue - initialCash) / initialCash) * 100;
 
     return {
@@ -690,7 +723,9 @@ function backtest(dates, closes, shortMA_window, longMA_window, initialCash, out
         returnRate,
         tradeCount,
         totalCommission,
-        trades
+        trades,
+        maxDrawdown: maxDrawdown * 100,  // ✅ 新增：最大回撤（百分比）
+        cashStates: cashStates  // ✅ 新增：用於debug
     };
 }
 
@@ -1156,6 +1191,9 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
     }
     html += '<div class="stat-item"><div class="stat-label">報酬率</div><div class="stat-value">' + best.returnRate.toFixed(2) + '%</div></div>';
     html += '<div class="stat-item"><div class="stat-label">交易次數</div><div class="stat-value">' + best.tradeCount + '</div></div>';
+    // ✅ 新增：最大回撤和獲利係數
+    html += '<div class="stat-item"><div class="stat-label">最大回撤</div><div class="stat-value" style="color: ' + (best.maxDrawdown > 50 ? '#ff6b6b' : '#51cf66') + ';">' + (best.maxDrawdown ? best.maxDrawdown.toFixed(2) : '0.00') + '%</div></div>';
+    html += '<div class="stat-item"><div class="stat-label">獲利係數</div><div class="stat-value">' + (best.profitFactor ? best.profitFactor.toFixed(2) : '0.00') + '</div></div>';
     html += '</div></div>';
     
     html += '<div class="view-tabs"><button class="view-tab active" onclick="switchResultView(' + "'top'" + ')">🏆 最佳排名</button>';
@@ -1167,7 +1205,7 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
     }
     html += '<th>最終資產</th>';
     if (useCommission) html += '<th>總手續費</th>';
-    html += '<th>報酬率</th><th>交易數</th><th>對比工具</th></tr></thead><tbody>';
+    html += '<th>報酬率</th><th>交易數</th><th>最大回撤</th><th>獲利係數</th><th>對比工具</th></tr></thead><tbody>';
     
     displayResults.forEach((r, index) => {
         let rank;
@@ -1196,6 +1234,9 @@ function displayOptimizationResults(results, initialCash, stockSymbol, useCommis
         if (useCommission) html += '<td onclick="' + detailFunc + '">$' + r.totalCommission.toFixed(2) + '</td>';
         html += '<td onclick="' + detailFunc + '">' + r.returnRate.toFixed(2) + '%</td>';
         html += '<td onclick="' + detailFunc + '">' + r.tradeCount + '</td>';
+        // ✅ 新增：最大回撤和獲利係數
+        html += '<td onclick="' + detailFunc + '" style="color: ' + (r.maxDrawdown > 50 ? '#ff6b6b' : '#51cf66') + ';">' + (r.maxDrawdown ? r.maxDrawdown.toFixed(2) : '0.00') + '%</td>';
+        html += '<td onclick="' + detailFunc + '">' + (r.profitFactor ? r.profitFactor.toFixed(2) : '0.00') + '</td>';
         html += '<td><button class="btn" onclick="' + compareFunc + '" style="padding: 5px 10px; font-size: 0.85em; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">對比排名1</button></td>';
         html += '</tr>';
     });
@@ -2116,6 +2157,52 @@ function runOptimizationTraditional(stockSymbol, minMA, maxMA, maType, startDate
         
         const totalTime = (performance.now() - startTime) / 1000;
         console.log('✅ 計算完成！總耗時:', totalTime.toFixed(2), '秒，開始排序...');
+
+        // ✅ 計算每個結果的獲利係數和最大回撤
+        allOptimizationResults.forEach(result => {
+            // 最大回撤已在 backtest 中計算了，這裡確認存在
+            if (result.maxDrawdown === undefined) {
+                result.maxDrawdown = 0;
+            }
+            
+            // ✅ 計算獲利係數（基於實際金額）
+            let realTotalWinAmount = 0;
+            let realTotalLossAmount = 0;
+            
+            if (result.trades && result.trades.length > 0) {
+                let lastBuyPrice = null;
+                let lastBuyAmount = 0;
+                
+                result.trades.forEach(trade => {
+                    if (trade.action === '買入') {
+                        lastBuyPrice = trade.price;
+                        lastBuyAmount = (trade.shares || 0) * trade.price;
+                    } else if (trade.action === '賣出' || trade.action === '期末賣出') {
+                        if (lastBuyPrice !== null && lastBuyAmount > 0) {
+                            const saleAmount = (trade.shares || 0) * trade.price;
+                            const profitAmount = saleAmount - lastBuyAmount;
+                            
+                            if (profitAmount > 0) {
+                                realTotalWinAmount += profitAmount;
+                            } else {
+                                realTotalLossAmount += Math.abs(profitAmount);
+                            }
+                            lastBuyPrice = null;
+                            lastBuyAmount = 0;
+                        }
+                    }
+                });
+            }
+            
+            if (realTotalLossAmount > 0) {
+                result.profitFactor = realTotalWinAmount / realTotalLossAmount;
+            } else if (realTotalWinAmount > 0) {
+                result.profitFactor = 100;  // 無虧損 = 完美
+            } else {
+                result.profitFactor = 0;
+            }
+            result.profitFactor = Math.min(result.profitFactor, 999);
+        });
 
         allOptimizationResults.sort((a, b) => {
             if (Math.abs(a.finalValue - b.finalValue) > 0.0001) {
